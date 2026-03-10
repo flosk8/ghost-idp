@@ -155,11 +155,28 @@ The Time-To-Live (TTL) for a token is resolved with the following priority:
 ## Endpoints
 
 -   **`POST /token`**: Generates and returns a new JWT for a validated client.
--   **`GET /.well-known/jwks.json`**: Returns the JSON Web Key Set (JWKS).
+-   **`GET /.well-known/jwks.json`**: Returns the JSON Web Key Set (JWKS). CORS enabled for public access (e.g. jwt.io).
+-   **`GET /.well-known/openid-configuration`**: OIDC Discovery endpoint – allows tools like jwt.io to automatically find the public key.
+-   **`GET /healthz`**: Liveness probe – always returns `200 ok`.
+-   **`GET /readyz`**: Readiness probe – returns `200 ready` when the signing key is loaded, `503` otherwise.
 
 ## Testing
 
-The project includes comprehensive unit tests with 67.5% code coverage.
+The project includes comprehensive unit tests covering:
+
+### Test Coverage
+- **45+ tests** covering:
+  - Configuration loading and precedence
+  - Token generation and validation (web and mobile clients)
+  - JWKS endpoint and OIDC Discovery
+  - Health (`/healthz`) and readiness (`/readyz`) probes
+  - Request logging with probe filtering
+  - Origin validation for web clients
+  - Device ID handling for mobile clients
+  - CORS header validation
+  - Key management and rotation
+  - Logger (text and JSON format)
+  - Concurrent access to signing keys
 
 ### Run Tests
 ```bash
@@ -173,11 +190,12 @@ make test-coverage
 go test -v -run TestTokenHandler_SuccessfulMobileToken
 ```
 
-### Test Coverage
-- **31 tests** covering configuration, handlers, key management, and logging
-- **67.5% code coverage** of all statements
-- **Race detector** ensures thread-safety
-- **CI/CD** runs tests automatically on every push
+### Test Details
+- **Race detector**: Enabled via `-race` flag for concurrent operation safety
+- **Request logger tests**: Verify that health probes are properly filtered from logs
+- **CORS tests**: Confirm that jwt.io can fetch public keys automatically
+- **Key management tests**: Cover ECDSA key loading, PKCS#8 format, and concurrent access
+- **CI/CD**: Tests run automatically on every push via GitHub Actions
 
 See [TESTING.md](TESTING.md) for detailed testing documentation.
 

@@ -445,3 +445,95 @@ func loadTestKey() error {
 	appConfig.KeyPath = "tls.key"
 	return loadKey()
 }
+
+func TestHealthHandler(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	w := httptest.NewRecorder()
+
+	healthHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got: %d", w.Code)
+	}
+
+	if w.Body.String() != "ok" {
+		t.Errorf("Expected body 'ok', got: %q", w.Body.String())
+	}
+}
+
+func TestReadyHandler(t *testing.T) {
+	originalLogger := appLogger
+	defer func() { appLogger = originalLogger }()
+	appLogger = &TextLogger{}
+
+	t.Run("key not loaded", func(t *testing.T) {
+		keyMu.Lock()
+		originalKey := signingKey
+		signingKey = nil
+		keyMu.Unlock()
+		defer func() {
+			keyMu.Lock()
+			signingKey = originalKey
+			keyMu.Unlock()
+		}()
+
+		req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+		w := httptest.NewRecorder()
+
+		readyHandler(w, req)
+
+		if w.Code != http.StatusServiceUnavailable {
+			t.Errorf("Expected status 503, got: %d", w.Code)
+		}
+	})
+
+	t.Run("key loaded", func(t *testing.T) {
+		if err := loadTestKey(); err != nil {
+			t.Skipf("Could not load test key: %v", err)
+			return
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+		w := httptest.NewRecorder()
+
+		readyHandler(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got: %d", w.Code)
+		}
+
+		if w.Body.String() != "ready" {
+			t.Errorf("Expected body 'ready', got: %q", w.Body.String())
+		}
+	})
+}
+
+func TestJWKSHandlerCORS(t *testing.T) {
+	if err := loadTestKey(); err != nil {
+		t.Skipf("Could not load test key: %v", err)
+		return
+	}
+
+	t.Run("GET request includes CORS headers", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/.well-known/jwks.json", nil)
+		w := httptest.NewRecorder()
+
+		jwksHandler(w, req)
+
+		corsOrigin := w.Header().Get("Access-Control-Allow-Origin")
+		if corsOrigin != "*" {
+			t.Errorf("Expected Access-Control-Allow-Origin *, got: %s", corsOrigin)
+		}
+	})
+
+	t.Run("OPTIONS request returns 204", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodOptions, "/.well-known/jwks.json", nil)
+		w := httptest.NewRecorder()
+
+		jwksHandler(w, req)
+
+		if w.Code != http.StatusNoContent {
+			t.Errorf("Expected status 204, got: %d", w.Code)
+		}
+	})
+}

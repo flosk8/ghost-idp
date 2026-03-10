@@ -8,6 +8,13 @@
 *.so
 *.dylib
 
+# Built binary
+ghost-idp
+
+# Private keys - NEVER commit!
+*.key
+*.pem
+
 # Test binary, built with `go test -c`
 *.test
 
