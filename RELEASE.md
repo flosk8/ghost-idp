@@ -30,7 +30,7 @@ git push origin v1.0.0
 ### 3. Automated Build
 The GitHub Actions workflow will automatically trigger and:
 - Build the Docker image for `linux/amd64` and `linux/arm64`
-- Push the image to `ghcr.io/OWNER/ghost-idp:v1.0.0`
+- Push the image to `ghcr.io/flosk8/ghost-idp:v1.0.0`
 - Create additional tags: `v1.0`, `v1`, `latest`
 - Create a GitHub Release with release notes
 
@@ -40,13 +40,13 @@ After the release, the image is available at:
 
 ```bash
 # Specific version
-docker pull ghcr.io/ndrde/ghost-idp:v1.0.0
+docker pull ghcr.io/flosk8/ghost-idp:1.0.0
 
 # Latest version
-docker pull ghcr.io/ndrde/ghost-idp:latest
+docker pull ghcr.io/flosk8/ghost-idp:latest
 
 # Major version (receives all patch updates)
-docker pull ghcr.io/ndrde/ghost-idp:v1
+docker pull ghcr.io/flosk8/ghost-idp:1
 ```
 
 ## Testing the Image Locally
@@ -56,7 +56,7 @@ docker run -p 8080:8080 \
   -v $(pwd)/tls.key:/app/tls.key \
   -v $(pwd)/config.yaml:/app/config.yaml \
   -e JWT_KEY_PATH=/app/tls.key \
-  ghcr.io/ndrde/ghost-idp:v1.0.0
+  ghcr.io/flosk8/ghost-idp:1.0.0
 ```
 
 ## Embedding Version in Code
