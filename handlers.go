@@ -32,7 +32,18 @@ func readyHandler(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("ready"))
 }
 
-func jwksHandler(w http.ResponseWriter, _ *http.Request) {
+func jwksHandler(w http.ResponseWriter, r *http.Request) {
+	// Allow public CORS access so tools like jwt.io can fetch the public key automatically
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	// Handle preflight requests
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	keyMu.RLock()
 	defer keyMu.RUnlock()
 
