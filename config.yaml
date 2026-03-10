@@ -1,0 +1,27 @@
+publicHost: http://test.kompass.gg
+keyPath: /var/kompass/jwt.key
+
+token:
+  ttl: 3h
+  config:
+    dev:
+      audience:
+        - audience-1
+        - audience-2
+    prod:
+      ttl: 2h
+      audience:
+        - audience-3
+
+clients:
+  web:
+    - name: web-demo-dev
+      config: dev
+      allowedOrigins:
+        - "*"
+
+  mobile:
+    - name: mobile-demo-dev
+      config: dev
+    - name: mobile-demo-prod
+      config: prod
