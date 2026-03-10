@@ -36,16 +36,9 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-
       - name: Build
         run: go build -v .
 
       - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out . || true
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage.out
-          fail_ci_if_error: false
+        run: go test -v -race . || true
 
