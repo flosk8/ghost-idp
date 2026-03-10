@@ -1,27 +1,35 @@
-publicHost: http://example.com
-keyPath: /var/kompass/jwt.key
+publicHost: https://auth.kompass.gg
+keyPath: /etc/ghost-idp/certs/tls.key
 
 token:
-  ttl: 3h
+  ttl: 2h
   config:
     dev:
+      ttl: 3h
       audience:
-        - audience-1
-        - audience-2
+        - https://api.dev.kompass.gg
+        - https://dashboard.dev.kompass.gg
     prod:
       ttl: 2h
       audience:
-        - audience-3
+        - https://api.kompass.gg
+        - https://dashboard.kompass.gg
 
 clients:
   web:
-    - name: web-demo-dev
+    - name: kompass-web-dev
       config: dev
       allowedOrigins:
-        - "*"
+        - "http://localhost:3000"
+        - "https://dev.kompass.gg"
+    - name: kompass-web-prod
+      config: prod
+      allowedOrigins:
+        - "https://kompass.gg"
+        - "https://www.kompass.gg"
 
   mobile:
-    - name: mobile-demo-dev
+    - name: kompass-mobile-dev
       config: dev
-    - name: mobile-demo-prod
+    - name: kompass-mobile-prod
       config: prod

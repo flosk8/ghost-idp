@@ -13,6 +13,25 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+func healthHandler(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok"))
+}
+
+func readyHandler(w http.ResponseWriter, _ *http.Request) {
+	keyMu.RLock()
+	ready := signingKey != nil
+	keyMu.RUnlock()
+
+	if !ready {
+		http.Error(w, "not ready", http.StatusServiceUnavailable)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ready"))
+}
+
 func jwksHandler(w http.ResponseWriter, _ *http.Request) {
 	keyMu.RLock()
 	defer keyMu.RUnlock()

@@ -38,9 +38,11 @@ func main() {
 	go watchKeyRotation()
 
 	r := chi.NewRouter()
-	r.Use(middleware.Logger)
+	r.Use(requestLoggerSkippingProbes)
 	r.Use(middleware.Recoverer)
 
+	r.Get("/healthz", healthHandler)
+	r.Get("/readyz", readyHandler)
 	r.Get("/.well-known/jwks.json", jwksHandler)
 	r.Post("/token", tokenHandler)
 

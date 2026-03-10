@@ -14,6 +14,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o ghost-idp .
 
 # Use a minimal distroless image for the final stage
 FROM gcr.io/distroless/static-debian11
-COPY --from=builder /app/ghost-idp /
+WORKDIR /app
+COPY --from=builder /app/ghost-idp /app/
+COPY --from=builder /app/config.yaml /app/
 EXPOSE 8080
-CMD ["/ghost-idp"]
+CMD ["/app/ghost-idp"]
