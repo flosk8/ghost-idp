@@ -182,7 +182,7 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	claims := jwt.MapClaims{
-		"iss":       "https://ghost-idp.kompass.gg",
+		"iss":       formatHost(appConfig.PublicHost),
 		"sub":       "anon-" + time.Now().Format("20060102150405"),
 		"role":      "guest",
 		"aud":       audience, // Use configured audience
