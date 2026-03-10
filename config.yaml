@@ -1,4 +1,4 @@
-publicHost: http://test.kompass.gg
+publicHost: http://example.com
 keyPath: /var/kompass/jwt.key
 
 token:
