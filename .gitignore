@@ -17,6 +17,10 @@ coverage.*
 *.coverprofile
 profile.cov
 
+# Test documentation (temporary/personal notes)
+TEST_SUMMARY.md
+UNIT_TESTS_COMPLETE.md
+
 # Dependency directories (remove the comment below to include it)
 # vendor/
 

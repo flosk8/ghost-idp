@@ -1,55 +1,55 @@
 # Releasing Ghost-IDP
 
-## Versionsnummern
+## Version Numbers
 
-Die Versionsnummer wird über **Git Tags** verwaltet. Wir folgen [Semantic Versioning](https://semver.org/):
+Version numbers are managed via **Git Tags**. We follow [Semantic Versioning](https://semver.org/):
 
-- **MAJOR.MINOR.PATCH** (z.B. `v1.2.3`)
-  - **MAJOR**: Breaking Changes
-  - **MINOR**: Neue Features (rückwärtskompatibel)
-  - **PATCH**: Bugfixes
+- **MAJOR.MINOR.PATCH** (e.g., `v1.2.3`)
+  - **MAJOR**: Breaking changes
+  - **MINOR**: New features (backwards compatible)
+  - **PATCH**: Bug fixes
 
-## Release erstellen
+## Creating a Release
 
-### 1. Code committen und pushen
+### 1. Commit and push your code
 ```bash
 git add .
-git commit -m "feat: neue Feature-Beschreibung"
+git commit -m "feat: new feature description"
 git push origin main
 ```
 
-### 2. Tag erstellen und pushen
-# Tag lokal erstellen (mit Nachricht)
+### 2. Create and push a tag
 ```bash
+# Create tag locally (with message)
 git tag -a v1.0.0 -m "Release v1.0.0 - Initial release"
 
-# Tag zu GitHub pushen
+# Push tag to GitHub
 git push origin v1.0.0
 ```
 
-### 3. Automatischer Build
-Der GitHub Actions Workflow wird automatisch getriggert und:
-- Baut das Docker Image für `linux/amd64` und `linux/arm64`
-- Pusht das Image zu `ghcr.io/OWNER/ghost-idp:v1.0.0`
-- Erstellt zusätzliche Tags: `v1.0`, `v1`, `latest`
-- Erstellt ein GitHub Release mit Release Notes
+### 3. Automated Build
+The GitHub Actions workflow will automatically trigger and:
+- Build the Docker image for `linux/amd64` and `linux/arm64`
+- Push the image to `ghcr.io/OWNER/ghost-idp:v1.0.0`
+- Create additional tags: `v1.0`, `v1`, `latest`
+- Create a GitHub Release with release notes
 
-## Docker Images verwenden
+## Using Docker Images
 
-Nach dem Release ist das Image verfügbar unter:
+After the release, the image is available at:
 
 ```bash
-# Spezifische Version
+# Specific version
 docker pull ghcr.io/ndrde/ghost-idp:v1.0.0
 
-# Neueste Version
+# Latest version
 docker pull ghcr.io/ndrde/ghost-idp:latest
 
-# Major Version (erhält alle Patch-Updates)
+# Major version (receives all patch updates)
 docker pull ghcr.io/ndrde/ghost-idp:v1
 ```
 
-## Image lokal testen
+## Testing the Image Locally
 
 ```bash
 docker run -p 8080:8080 \
@@ -59,12 +59,12 @@ docker run -p 8080:8080 \
   ghcr.io/ndrde/ghost-idp:v1.0.0
 ```
 
-## Versionsnummer im Code anzeigen
+## Embedding Version in Code
 
-Optional kann man die Version auch im Code verfügbar machen:
+Optionally, you can embed the version in the binary:
 
 ```bash
-# Bei Build mit ldflags
+# Build with ldflags
 go build -ldflags="-X main.Version=$(git describe --tags --always)"
 ```
 

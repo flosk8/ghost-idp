@@ -15,8 +15,6 @@ var (
 )
 
 func main() {
-	// Initialize a temporary text logger for startup
-	appLogger = &TextLogger{}
 
 	// Load configuration from config.yaml
 	if err := LoadConfig("config.yaml"); err != nil {

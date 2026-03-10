@@ -157,6 +157,30 @@ The Time-To-Live (TTL) for a token is resolved with the following priority:
 -   **`POST /token`**: Generates and returns a new JWT for a validated client.
 -   **`GET /.well-known/jwks.json`**: Returns the JSON Web Key Set (JWKS).
 
+## Testing
+
+The project includes comprehensive unit tests with 67.5% code coverage.
+
+### Run Tests
+```bash
+# Run all tests
+make test
+
+# Run tests with coverage report
+make test-coverage
+
+# Run specific test
+go test -v -run TestTokenHandler_SuccessfulMobileToken
+```
+
+### Test Coverage
+- **31 tests** covering configuration, handlers, key management, and logging
+- **67.5% code coverage** of all statements
+- **Race detector** ensures thread-safety
+- **CI/CD** runs tests automatically on every push
+
+See [TESTING.md](TESTING.md) for detailed testing documentation.
+
 ## Outlook
 
 ### App Attestation

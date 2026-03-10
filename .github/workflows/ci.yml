@@ -39,6 +39,9 @@ jobs:
       - name: Build
         run: go build -v .
 
-      - name: Run tests
-        run: go test -v -race . || true
+      - name: Run tests with coverage
+        run: go test -v -race -coverprofile=coverage.out -covermode=atomic .
+
+      - name: Display coverage
+        run: go tool cover -func=coverage.out
 
