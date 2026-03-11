@@ -147,14 +147,11 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 	// 4. Additional checks based on client type
 	var deviceID string
 	if clientType == "mobile" {
-		// Accept device_id from form field or X-Device-Id header (either is required)
-		deviceID = strings.TrimSpace(r.FormValue("device_id"))
+		// Mobile clients must provide X-Device-Id header
+		deviceID = strings.TrimSpace(r.Header.Get("X-Device-Id"))
 		if deviceID == "" {
-			deviceID = strings.TrimSpace(r.Header.Get("X-Device-Id"))
-		}
-		if deviceID == "" {
-			appLogger.Warn("Token request from mobile client '%s' missing device identifier (device_id or X-Device-Id header).", clientID)
-			http.Error(w, "device_id is required for mobile clients", http.StatusBadRequest)
+			appLogger.Warn("Token request from mobile client '%s' missing 'X-Device-Id' header.", clientID)
+			http.Error(w, "X-Device-Id header is required for mobile clients", http.StatusBadRequest)
 			return
 		}
 		appLogger.Info("Processing token request for mobile client: %s with device ID: %s", clientID, deviceID)

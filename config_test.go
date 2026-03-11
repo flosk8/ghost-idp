@@ -170,9 +170,6 @@ func TestLoadConfig(t *testing.T) {
 		if appConfig.Attestation.HeaderName != "X-Device-Id" {
 			t.Errorf("Expected default attestation header, got: %s", appConfig.Attestation.HeaderName)
 		}
-		if appConfig.Attestation.FormField != "device_id" {
-			t.Errorf("Expected default attestation form field, got: %s", appConfig.Attestation.FormField)
-		}
 		if appConfig.Attestation.Provider != "noop" {
 			t.Errorf("Expected default attestation provider noop, got: %s", appConfig.Attestation.Provider)
 		}
@@ -200,9 +197,6 @@ func TestLoadConfig(t *testing.T) {
 		if err := os.Setenv("ATTESTATION_HEADER", "X-Attestation"); err != nil {
 			t.Fatalf("Failed to set env var: %v", err)
 		}
-		if err := os.Setenv("ATTESTATION_FORM_FIELD", "attestation_payload"); err != nil {
-			t.Fatalf("Failed to set env var: %v", err)
-		}
 		if err := os.Setenv("ATTESTATION_PROVIDER", "stub"); err != nil {
 			t.Fatalf("Failed to set env var: %v", err)
 		}
@@ -213,7 +207,6 @@ func TestLoadConfig(t *testing.T) {
 			_ = os.Unsetenv("ATTESTATION_ENABLED")
 			_ = os.Unsetenv("ATTESTATION_REQUIRED_FOR")
 			_ = os.Unsetenv("ATTESTATION_HEADER")
-			_ = os.Unsetenv("ATTESTATION_FORM_FIELD")
 			_ = os.Unsetenv("ATTESTATION_PROVIDER")
 		}()
 
@@ -239,9 +232,6 @@ func TestLoadConfig(t *testing.T) {
 		}
 		if appConfig.Attestation.HeaderName != "X-Attestation" {
 			t.Errorf("Expected attestation header from env var, got: %s", appConfig.Attestation.HeaderName)
-		}
-		if appConfig.Attestation.FormField != "attestation_payload" {
-			t.Errorf("Expected attestation form field from env var, got: %s", appConfig.Attestation.FormField)
 		}
 		if appConfig.Attestation.Provider != "stub" {
 			t.Errorf("Expected attestation provider from env var, got: %s", appConfig.Attestation.Provider)

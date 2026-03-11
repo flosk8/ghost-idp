@@ -40,7 +40,6 @@ type AttestationConfig struct {
 	Enabled     bool     `yaml:"enabled"`
 	RequiredFor []string `yaml:"requiredFor"`
 	HeaderName  string   `yaml:"headerName"`
-	FormField   string   `yaml:"formField"`
 	Provider    string   `yaml:"provider"`
 }
 
@@ -130,7 +129,6 @@ func LoadConfig(configPath string) error {
 	appConfig.Attestation.Enabled = false
 	appConfig.Attestation.RequiredFor = []string{"mobile"}
 	appConfig.Attestation.HeaderName = "X-Device-Id"
-	appConfig.Attestation.FormField = "device_id"
 	appConfig.Attestation.Provider = "noop"
 
 	// 2. Read config.yaml and unmarshal it
@@ -181,9 +179,6 @@ func LoadConfig(configPath string) error {
 	}
 	if headerName, ok := os.LookupEnv("ATTESTATION_HEADER"); ok && strings.TrimSpace(headerName) != "" {
 		appConfig.Attestation.HeaderName = strings.TrimSpace(headerName)
-	}
-	if formField, ok := os.LookupEnv("ATTESTATION_FORM_FIELD"); ok && strings.TrimSpace(formField) != "" {
-		appConfig.Attestation.FormField = strings.TrimSpace(formField)
 	}
 	if provider, ok := os.LookupEnv("ATTESTATION_PROVIDER"); ok && strings.TrimSpace(provider) != "" {
 		appConfig.Attestation.Provider = strings.TrimSpace(provider)

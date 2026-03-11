@@ -6,7 +6,6 @@ attestation:
   requiredFor:
     - mobile
   headerName: X-Device-Id
-  formField: device_id
   provider: noop
 
 token:

@@ -67,15 +67,7 @@ func extractAttestationToken(r *http.Request) string {
 		headerName = "X-Device-Id"
 	}
 
-	formField := strings.TrimSpace(appConfig.Attestation.FormField)
-	if formField == "" {
-		formField = "device_id"
-	}
-
-	if token := strings.TrimSpace(r.Header.Get(headerName)); token != "" {
-		return token
-	}
-	return strings.TrimSpace(r.FormValue(formField))
+	return strings.TrimSpace(r.Header.Get(headerName))
 }
 
 func verifyRequestAttestation(r *http.Request, clientID, clientType string) (*AttestationResult, error) {

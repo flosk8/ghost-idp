@@ -24,21 +24,22 @@ To receive a token, a client must send a `POST` request to the `/token` endpoint
 |-------------------|----------|-----------------------------------------------------------------------------|
 | `grant_type`      | Yes      | Must be set to `client_credentials`.                                        |
 | `client_id`       | Yes      | The unique identifier of the client as defined in `config.yaml`.            |
-| `device_id`       | **Mobile Only** | Device identifier — sent as form field or via `X-Device-Id` header (one of the two is required). Becomes the `device_id` claim in the JWT. |
+| `X-Device-Id`     | **Mobile Only** | HTTP header with a device identifier. Required for all mobile client token requests. Becomes the `device_id` claim in the JWT. |
 
 ### Example Request
 
 ```bash
-# Mobile client — device_id as form field
+# Mobile client with X-Device-Id header
 curl -X POST http://localhost:8080/token \
      -H "Content-Type: application/x-www-form-urlencoded" \
-     -d "grant_type=client_credentials&client_id=your-mobile-client&device_id=my-device-id"
-
-# Mobile client — device_id as header
-curl -X POST http://localhost:8080/token \
-     -H "Content-Type: application/x-www-form-urlencoded" \
-     -H "X-Device-Id: my-device-id" \
+     -H "X-Device-Id: my-device-identifier" \
      -d "grant_type=client_credentials&client_id=your-mobile-client"
+
+# Web client (no device identifier needed)
+curl -X POST http://localhost:8080/token \
+     -H "Content-Type: application/x-www-form-urlencoded" \
+     -H "Origin: https://my-web-app.com" \
+     -d "grant_type=client_credentials&client_id=your-web-client"
 ```
 
 The IDP validates the `client_id` and its associated configuration:
@@ -46,8 +47,8 @@ The IDP validates the `client_id` and its associated configuration:
     -   Validates the `Origin` header against `allowedOrigins`.
     -   Receives a `Set-Cookie` header with the JWT for easy browser integration.
 -   **Mobile Clients**:
-    -   Must provide a device identifier via the `device_id` form field **or** the `X-Device-Id` header (form field takes precedence if both are set).
-    -   The value is included as the `device_id` claim in the JWT.
+    -   Must provide the `X-Device-Id` header.
+    -   The header value becomes the `device_id` claim in the JWT.
     -   Do not receive a cookie and are expected to use the `access_token` from the JSON response body.
 
 ## Configuration
@@ -71,7 +72,6 @@ attestation:
   requiredFor:
     - mobile
   headerName: X-Device-Id
-  formField: device_id
   provider: noop
 
 # Token configuration section
@@ -137,7 +137,6 @@ The Time-To-Live (TTL) for a token is resolved with the following priority:
 | `ATTESTATION_ENABLED`         | Enables request-time attestation validation.                                 | `false`                               |
 | `ATTESTATION_REQUIRED_FOR`    | Comma-separated client types requiring attestation (e.g. `mobile,web`).     | `mobile`                              |
 | `ATTESTATION_HEADER`          | Header used to read attestation data.                                        | `X-Device-Id`                         |
-| `ATTESTATION_FORM_FIELD`      | Form field used to read attestation data.                                    | `device_id`                           |
 | `ATTESTATION_PROVIDER`        | Attestation provider id (`noop` scaffold by default).                        | `noop`                                |
 
 
@@ -226,7 +225,7 @@ Ghost-IDP includes an attestation scaffold that can verify that token requests o
 
 ### How It Works
 
-1. The mobile client sends a device identifier / attestation payload via the `device_id` form field or the `X-Device-Id` header.
+1. The mobile client sends a device identifier / attestation payload via the `X-Device-Id` header.
 2. Ghost-IDP extracts the value and passes it to the configured `AttestationProvider`.
 3. If the provider accepts the token, the JWT will contain extra claims:
    - `attested: true`
@@ -275,7 +274,7 @@ type PlayIntegrityProvider struct {
 }
 
 func (p PlayIntegrityProvider) Verify(ctx context.Context, token string, r *http.Request, clientID, clientType string) (*AttestationResult, error) {
-    // Call the Play Integrity API here
+    // Call the Play Integrity API here with the token from X-Device-Id header
     // Return AttestationResult on success, error on failure
     if token == "" {
         return nil, fmt.Errorf("empty token")
