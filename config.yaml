@@ -1,4 +1,4 @@
-publicHost: https://auth.kompass.gg
+publicHost: https://auth.example.com
 keyPath: /etc/ghost-idp/certs/tls.key
 
 attestation:
