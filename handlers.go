@@ -25,12 +25,18 @@ func readyHandler(w http.ResponseWriter, _ *http.Request) {
 	keyMu.RUnlock()
 
 	if !ready {
-		http.Error(w, "not ready", http.StatusServiceUnavailable)
+		writeJSONError(w, http.StatusServiceUnavailable, "not ready")
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ready"))
+}
+
+func writeJSONError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
 func jwksHandler(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +56,7 @@ func jwksHandler(w http.ResponseWriter, r *http.Request) {
 
 	if signingKey == nil {
 		appLogger.Error("JWKS request received but signing key not loaded.")
-		http.Error(w, "Key not loaded", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "Key not loaded")
 		return
 	}
 
@@ -111,7 +117,7 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 	// Parse the form data for x-www-form-urlencoded
 	if err := r.ParseForm(); err != nil {
 		appLogger.Error("Failed to parse form data: %v", err)
-		http.Error(w, "Bad Request", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "Bad Request")
 		return
 	}
 
@@ -119,7 +125,7 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 	clientID := r.FormValue("client_id")
 	if clientID == "" {
 		appLogger.Warn("Token request missing 'client_id' parameter in form data.")
-		http.Error(w, "client_id is required", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "client_id is required")
 		return
 	}
 
@@ -127,12 +133,12 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 	grantType := r.FormValue("grant_type")
 	if grantType == "" {
 		appLogger.Warn("Token request missing 'grant_type' parameter in form_data.")
-		http.Error(w, "grant_type is required", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "grant_type is required")
 		return
 	}
 	if grantType != "client_credentials" {
 		appLogger.Warn("Invalid grant_type provided: %s", grantType)
-		http.Error(w, "unsupported_grant_type", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "unsupported_grant_type")
 		return
 	}
 
@@ -140,18 +146,18 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 	clientType, ok := clientLookupMap[clientID]
 	if !ok {
 		appLogger.Warn("Invalid client_id provided: %s", clientID)
-		http.Error(w, "Invalid client_id", http.StatusForbidden)
+		writeJSONError(w, http.StatusForbidden, "Invalid client_id")
 		return
 	}
 
 	// 4. Additional checks based on client type
 	var deviceID string
 	if clientType == "mobile" {
-		// Mobile clients must provide X-Device-Id header
-		deviceID = strings.TrimSpace(r.Header.Get("X-Device-Id"))
+		deviceIDHeader := attestationHeaderName()
+		deviceID = strings.TrimSpace(r.Header.Get(deviceIDHeader))
 		if deviceID == "" {
-			appLogger.Warn("Token request from mobile client '%s' missing 'X-Device-Id' header.", clientID)
-			http.Error(w, "X-Device-Id header is required for mobile clients", http.StatusBadRequest)
+			appLogger.Warn("Token request from mobile client '%s' missing '%s' header.", clientID, deviceIDHeader)
+			writeJSONError(w, http.StatusBadRequest, deviceIDHeader+" header is required for mobile clients")
 			return
 		}
 		appLogger.Info("Processing token request for mobile client: %s with device ID: %s", clientID, deviceID)
@@ -161,14 +167,14 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
 		if origin == "" {
 			appLogger.Warn("Token request from web client '%s' missing 'Origin' header.", clientID)
-			http.Error(w, "Origin header is required for web clients", http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "Origin header is required for web clients")
 			return
 		}
 
 		allowedOrigins, originsFound := originLookupMap[clientID]
 		if !originsFound || len(allowedOrigins) == 0 {
 			appLogger.Warn("No allowed origins configured for web client '%s'. Denying request from origin '%s'.", clientID, origin)
-			http.Error(w, "Client not configured for origin validation", http.StatusForbidden)
+			writeJSONError(w, http.StatusForbidden, "Client not configured for origin validation")
 			return
 		}
 
@@ -186,7 +192,7 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 
 		if !isOriginAllowed {
 			appLogger.Warn("Origin '%s' not allowed for client '%s'. Allowed: %v", origin, clientID, allowedOrigins)
-			http.Error(w, "Origin not allowed", http.StatusForbidden)
+			writeJSONError(w, http.StatusForbidden, "Origin not allowed")
 			return
 		}
 		appLogger.Info("Origin '%s' validated successfully for client '%s'.", origin, clientID)
@@ -199,7 +205,7 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 			status = http.StatusBadRequest
 		}
 		appLogger.Warn("Attestation failed for client '%s': %v", clientID, err)
-		http.Error(w, err.Error(), status)
+		writeJSONError(w, status, err.Error())
 		return
 	}
 
@@ -209,7 +215,7 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 
 	if signingKey == nil {
 		appLogger.Warn("Token request for client '%s' received, but signing key is not loaded.", clientID)
-		http.Error(w, "Identity Provider is starting up...", http.StatusServiceUnavailable)
+		writeJSONError(w, http.StatusServiceUnavailable, "Identity Provider is starting up...")
 		return
 	}
 
@@ -226,7 +232,7 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 	if !ttlFound {
 		// This should not happen if initClientLookup is correct, but as a safeguard:
 		appLogger.Error("TTL not found for client '%s'. This indicates a configuration error.", clientID)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "Internal Server Error")
 		return
 	}
 
@@ -262,7 +268,7 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 	tokenString, err := token.SignedString(signingKey)
 	if err != nil {
 		appLogger.Error("Failed to sign token for client '%s': %v", clientID, err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "Internal Server Error")
 		return
 	}
 

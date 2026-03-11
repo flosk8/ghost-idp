@@ -173,6 +173,9 @@ func TestLoadConfig(t *testing.T) {
 		if appConfig.Attestation.Provider != "noop" {
 			t.Errorf("Expected default attestation provider noop, got: %s", appConfig.Attestation.Provider)
 		}
+		if appConfig.Attestation.MaxAgeSeconds != 60 {
+			t.Errorf("Expected default attestation max age 60, got: %d", appConfig.Attestation.MaxAgeSeconds)
+		}
 	})
 
 	t.Run("env var overrides", func(t *testing.T) {
@@ -200,6 +203,9 @@ func TestLoadConfig(t *testing.T) {
 		if err := os.Setenv("ATTESTATION_PROVIDER", "stub"); err != nil {
 			t.Fatalf("Failed to set env var: %v", err)
 		}
+		if err := os.Setenv("ATTESTATION_MAX_AGE_SECONDS", "120"); err != nil {
+			t.Fatalf("Failed to set env var: %v", err)
+		}
 		defer func() {
 			_ = os.Unsetenv("JWT_KEY_PATH")
 			_ = os.Unsetenv("PUBLIC_HOST")
@@ -208,6 +214,7 @@ func TestLoadConfig(t *testing.T) {
 			_ = os.Unsetenv("ATTESTATION_REQUIRED_FOR")
 			_ = os.Unsetenv("ATTESTATION_HEADER")
 			_ = os.Unsetenv("ATTESTATION_PROVIDER")
+			_ = os.Unsetenv("ATTESTATION_MAX_AGE_SECONDS")
 		}()
 
 		err := LoadConfig("non_existent_config.yaml")
@@ -235,6 +242,9 @@ func TestLoadConfig(t *testing.T) {
 		}
 		if appConfig.Attestation.Provider != "stub" {
 			t.Errorf("Expected attestation provider from env var, got: %s", appConfig.Attestation.Provider)
+		}
+		if appConfig.Attestation.MaxAgeSeconds != 120 {
+			t.Errorf("Expected attestation max age from env var, got: %d", appConfig.Attestation.MaxAgeSeconds)
 		}
 	})
 }
@@ -270,8 +280,9 @@ func TestInitClientLookup(t *testing.T) {
 			},
 			Mobile: []Client{
 				{
-					Name:   "mobile-client-1",
-					Config: "prod",
+					Name:       "mobile-client-1",
+					Config:     "prod",
+					HMACSecret: "super-secret",
 				},
 			},
 		},
@@ -323,6 +334,16 @@ func TestInitClientLookup(t *testing.T) {
 		}
 		if ttl != 4*time.Hour {
 			t.Errorf("Expected TTL 4h, got: %v", ttl)
+		}
+	})
+
+	t.Run("hmac secret lookup map", func(t *testing.T) {
+		secret, exists := hmacSecretLookupMap["mobile-client-1"]
+		if !exists {
+			t.Error("Expected mobile-client-1 to have hmac secret")
+		}
+		if secret != "super-secret" {
+			t.Errorf("Expected hmac secret super-secret, got: %s", secret)
 		}
 	})
 

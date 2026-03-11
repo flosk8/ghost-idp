@@ -72,7 +72,8 @@ attestation:
   requiredFor:
     - mobile
   headerName: X-Device-Id
-  provider: noop
+  provider: hmac
+  maxAgeSeconds: 15
 
 # Token configuration section
 token:
@@ -105,6 +106,10 @@ clients:
   mobile:
     - name: "br24-dev"
       config: "dev"
+      hmacSecret: "dev-secret-change-me"
+    - name: "br24-prod"
+      config: "prod"
+      hmacSecret: "prod-secret-change-me"
 ```
 
 ### Configuration Precedence
@@ -138,6 +143,7 @@ The Time-To-Live (TTL) for a token is resolved with the following priority:
 | `ATTESTATION_REQUIRED_FOR`    | Comma-separated client types requiring attestation (e.g. `mobile,web`).     | `mobile`                              |
 | `ATTESTATION_HEADER`          | Header used to read attestation data.                                        | `X-Device-Id`                         |
 | `ATTESTATION_PROVIDER`        | Attestation provider id (`noop` scaffold by default).                        | `noop`                                |
+| `ATTESTATION_MAX_AGE_SECONDS` | Maximum allowed age of `X-Timestamp` in seconds for `hmac` provider.         | `60`                                  |
 
 
 ## Getting Started
@@ -234,29 +240,55 @@ Ghost-IDP includes an attestation scaffold that can verify that token requests o
 
 ### Enabling Attestation
 
-Set `attestation.enabled: true` in `config.yaml` or via environment variable:
+Current checked-in state (`config.yaml`):
+
+```yaml
+attestation:
+  enabled: false
+  requiredFor:
+    - mobile
+  headerName: X-Device-Id
+  provider: hmac
+  maxAgeSeconds: 15
+```
+
+To enforce HMAC attestation in runtime, set `enabled: true`:
 
 ```yaml
 attestation:
   enabled: true
   requiredFor:
-    - mobile        # enforce only for mobile clients; add "web" to also enforce for web clients
+    - mobile
   headerName: X-Device-Id
-  formField: device_id
-  provider: noop    # replace with your provider id once implemented
+  provider: hmac
+  maxAgeSeconds: 15
+
+clients:
+  mobile:
+    - name: your-mobile-client
+      config: dev
+      hmacSecret: your-strong-shared-secret
 ```
+
+When `provider: hmac` is active, the following headers are required for mobile requests:
+- `X-Device-Id`
+- `X-Timestamp` (unix seconds)
+- `X-Signature` (hex HMAC-SHA256 of `X-Device-Id + X-Timestamp`)
 
 Or via environment variables:
 
 ```bash
 ATTESTATION_ENABLED=true
 ATTESTATION_REQUIRED_FOR=mobile
-ATTESTATION_PROVIDER=play-integrity   # example
+ATTESTATION_PROVIDER=hmac
+ATTESTATION_MAX_AGE_SECONDS=15
 ```
 
 ### Adding a Custom Provider
 
-All attestation logic lives in `attestation.go`. To add a real provider:
+All attestation logic lives in `attestation.go`. A built-in HMAC provider is implemented in `attestation_hmac.go`.
+
+To add another provider:
 
 1. **Implement the interface** — create a new file, e.g. `attestation_play_integrity.go`:
 
@@ -274,25 +306,14 @@ type PlayIntegrityProvider struct {
 }
 
 func (p PlayIntegrityProvider) Verify(ctx context.Context, token string, r *http.Request, clientID, clientType string) (*AttestationResult, error) {
-    // Call the Play Integrity API here with the token from X-Device-Id header
-    // Return AttestationResult on success, error on failure
     if token == "" {
         return nil, fmt.Errorf("empty token")
     }
-    // ... real verification logic ...
     return &AttestationResult{Level: "strong"}, nil
 }
 ```
 
-2. **Register the provider** — add a case in `initAttestationProvider()` in `attestation.go`:
-
-```go
-case "play-integrity":
-    attestationProvider = PlayIntegrityProvider{ /* inject config */ }
-case "app-attest":
-    attestationProvider = AppleAppAttestProvider{ /* inject config */ }
-```
-
+2. **Register the provider** — add a case in `initAttestationProvider()` in `attestation.go`.
 3. **Set the provider** in `config.yaml`:
 
 ```yaml

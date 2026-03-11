@@ -6,7 +6,8 @@ attestation:
   requiredFor:
     - mobile
   headerName: X-Device-Id
-  provider: noop
+  provider: hmac
+  maxAgeSeconds: 15
 
 token:
   ttl: 2h
@@ -38,5 +39,7 @@ clients:
   mobile:
     - name: kompass-mobile-dev
       config: dev
+      hmacSecret: dev-secret-change-me
     - name: kompass-mobile-prod
       config: prod
+      hmacSecret: prod-secret-change-me

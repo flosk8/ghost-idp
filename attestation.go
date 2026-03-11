@@ -38,6 +38,8 @@ func initAttestationProvider() {
 	switch strings.ToLower(strings.TrimSpace(appConfig.Attestation.Provider)) {
 	case "", "noop", "stub":
 		attestationProvider = NoopAttestationProvider{}
+	case "hmac":
+		attestationProvider = HMACAttestationProvider{}
 	default:
 		appLogger.Warn("Unknown attestation provider '%s'. Falling back to noop provider.", appConfig.Attestation.Provider)
 		attestationProvider = NoopAttestationProvider{}
@@ -61,13 +63,16 @@ func requiresAttestation(clientType string) bool {
 	return false
 }
 
-func extractAttestationToken(r *http.Request) string {
+func attestationHeaderName() string {
 	headerName := strings.TrimSpace(appConfig.Attestation.HeaderName)
 	if headerName == "" {
-		headerName = "X-Device-Id"
+		return "X-Device-Id"
 	}
+	return headerName
+}
 
-	return strings.TrimSpace(r.Header.Get(headerName))
+func extractAttestationToken(r *http.Request) string {
+	return strings.TrimSpace(r.Header.Get(attestationHeaderName()))
 }
 
 func verifyRequestAttestation(r *http.Request, clientID, clientType string) (*AttestationResult, error) {
