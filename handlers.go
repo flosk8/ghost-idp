@@ -81,6 +81,31 @@ func formatHost(host string) string {
 	return host
 }
 
+func extractClientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		for _, part := range strings.Split(xff, ",") {
+			ip := strings.TrimSpace(part)
+			if net.ParseIP(ip) != nil {
+				return ip
+			}
+		}
+	}
+
+	if xri := strings.TrimSpace(r.Header.Get("X-Real-IP")); xri != "" && net.ParseIP(xri) != nil {
+		return xri
+	}
+
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil && net.ParseIP(host) != nil {
+		return host
+	}
+
+	if ip := strings.TrimSpace(r.RemoteAddr); net.ParseIP(ip) != nil {
+		return ip
+	}
+
+	return ""
+}
+
 func tokenHandler(w http.ResponseWriter, r *http.Request) {
 	// Parse the form data for x-www-form-urlencoded
 	if err := r.ParseForm(); err != nil {
@@ -205,10 +230,10 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add client IP to claims
-	if clientIP, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+	if clientIP := extractClientIP(r); clientIP != "" {
 		claims["client_ip"] = clientIP
 	} else {
-		appLogger.Warn("Could not parse client IP from RemoteAddr '%s': %v", r.RemoteAddr, err)
+		appLogger.Warn("Could not determine client IP from request headers/RemoteAddr. RemoteAddr='%s'", r.RemoteAddr)
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)

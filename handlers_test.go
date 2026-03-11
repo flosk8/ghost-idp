@@ -537,3 +537,97 @@ func TestJWKSHandlerCORS(t *testing.T) {
 		}
 	})
 }
+
+func TestExtractClientIP(t *testing.T) {
+	tests := []struct {
+		name       string
+		xff        string
+		xRealIP    string
+		remoteAddr string
+		expected   string
+	}{
+		{name: "uses first IP from X-Forwarded-For", xff: "203.0.113.10, 10.0.0.1", remoteAddr: "10.1.1.1:1234", expected: "203.0.113.10"},
+		{name: "falls back to X-Real-IP", xRealIP: "198.51.100.7", remoteAddr: "10.1.1.1:1234", expected: "198.51.100.7"},
+		{name: "falls back to RemoteAddr host", remoteAddr: "192.0.2.55:54321", expected: "192.0.2.55"},
+		{name: "accepts plain RemoteAddr IP", remoteAddr: "192.0.2.99", expected: "192.0.2.99"},
+		{name: "returns empty for invalid values", xff: "invalid", xRealIP: "still-invalid", remoteAddr: "not-an-ip", expected: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/token", nil)
+			req.RemoteAddr = tt.remoteAddr
+			if tt.xff != "" {
+				req.Header.Set("X-Forwarded-For", tt.xff)
+			}
+			if tt.xRealIP != "" {
+				req.Header.Set("X-Real-IP", tt.xRealIP)
+			}
+
+			got := extractClientIP(req)
+			if got != tt.expected {
+				t.Errorf("extractClientIP() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestTokenHandler_UsesForwardedClientIP(t *testing.T) {
+	originalLogger := appLogger
+	defer func() { appLogger = originalLogger }()
+	appLogger = &TextLogger{}
+
+	if err := loadTestKey(); err != nil {
+		t.Skipf("Could not load test key: %v", err)
+		return
+	}
+
+	clientLookupMap = map[string]string{"mobile-test": "mobile"}
+	audienceLookupMap = map[string][]string{"mobile-test": {"mobile-audience"}}
+	ttlLookupMap = map[string]time.Duration{"mobile-test": 2 * time.Hour}
+	appConfig.PublicHost = "http://localhost:8080"
+
+	form := url.Values{}
+	form.Set("client_id", "mobile-test")
+	form.Set("grant_type", "client_credentials")
+	form.Set("device_id", "device-1")
+
+	req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Forwarded-For", "203.0.113.50, 10.0.0.3")
+	req.RemoteAddr = "10.0.0.3:45000"
+	w := httptest.NewRecorder()
+
+	tokenHandler(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got: %d", w.Code)
+	}
+
+	var response map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse JSON response: %v", err)
+	}
+
+	tokenString, ok := response["access_token"].(string)
+	if !ok {
+		t.Fatal("Expected access_token in response")
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		keyMu.RLock()
+		defer keyMu.RUnlock()
+		return &signingKey.PublicKey, nil
+	})
+	if err != nil {
+		t.Fatalf("Failed to parse token: %v", err)
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		t.Fatal("Failed to read claims")
+	}
+
+	if got := claims["client_ip"]; got != "203.0.113.50" {
+		t.Errorf("Expected client_ip 203.0.113.50, got: %v", got)
+	}
+}
