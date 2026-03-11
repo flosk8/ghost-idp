@@ -241,6 +241,127 @@ func TestTokenHandler_MobileWithoutDeviceID(t *testing.T) {
 	}
 }
 
+func TestTokenHandler_MobileWithDeviceIDHeader(t *testing.T) {
+	originalLogger := appLogger
+	defer func() { appLogger = originalLogger }()
+	appLogger = &TextLogger{}
+
+	if err := loadTestKey(); err != nil {
+		t.Skipf("Could not load test key: %v", err)
+		return
+	}
+
+	clientLookupMap = map[string]string{"mobile-test": "mobile"}
+	audienceLookupMap = map[string][]string{"mobile-test": {"mobile-aud"}}
+	ttlLookupMap = map[string]time.Duration{"mobile-test": 2 * time.Hour}
+	appConfig.PublicHost = "http://localhost:8080"
+
+	form := url.Values{}
+	form.Set("client_id", "mobile-test")
+	form.Set("grant_type", "client_credentials")
+	// No device_id form field — only header
+
+	req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Device-Id", "header-device-123")
+	w := httptest.NewRecorder()
+
+	tokenHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got: %d — %s", w.Code, w.Body.String())
+	}
+
+	var response map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse JSON response: %v", err)
+	}
+
+	tokenString, ok := response["access_token"].(string)
+	if !ok {
+		t.Fatal("Expected access_token in response")
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		keyMu.RLock()
+		defer keyMu.RUnlock()
+		return &signingKey.PublicKey, nil
+	})
+	if err != nil {
+		t.Fatalf("Failed to parse token: %v", err)
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		t.Fatal("Failed to get claims")
+	}
+
+	if claims["device_id"] != "header-device-123" {
+		t.Errorf("Expected device_id from header, got: %v", claims["device_id"])
+	}
+}
+
+func TestTokenHandler_MobileFormFieldTakesPrecedenceOverHeader(t *testing.T) {
+	originalLogger := appLogger
+	defer func() { appLogger = originalLogger }()
+	appLogger = &TextLogger{}
+
+	if err := loadTestKey(); err != nil {
+		t.Skipf("Could not load test key: %v", err)
+		return
+	}
+
+	clientLookupMap = map[string]string{"mobile-test": "mobile"}
+	audienceLookupMap = map[string][]string{"mobile-test": {"mobile-aud"}}
+	ttlLookupMap = map[string]time.Duration{"mobile-test": 2 * time.Hour}
+	appConfig.PublicHost = "http://localhost:8080"
+
+	form := url.Values{}
+	form.Set("client_id", "mobile-test")
+	form.Set("grant_type", "client_credentials")
+	form.Set("device_id", "form-device-456")
+
+	req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Device-Id", "header-device-123")
+	w := httptest.NewRecorder()
+
+	tokenHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got: %d — %s", w.Code, w.Body.String())
+	}
+
+	var response map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse JSON response: %v", err)
+	}
+
+	tokenString, ok := response["access_token"].(string)
+	if !ok {
+		t.Fatal("Expected access_token in response")
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		keyMu.RLock()
+		defer keyMu.RUnlock()
+		return &signingKey.PublicKey, nil
+	})
+	if err != nil {
+		t.Fatalf("Failed to parse token: %v", err)
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		t.Fatal("Failed to get claims")
+	}
+
+	// Form field takes precedence over header
+	if claims["device_id"] != "form-device-456" {
+		t.Errorf("Expected device_id from form field, got: %v", claims["device_id"])
+	}
+}
+
 func TestTokenHandler_WebWithoutOrigin(t *testing.T) {
 	originalLogger := appLogger
 	defer func() { appLogger = originalLogger }()

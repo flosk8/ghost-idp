@@ -1,6 +1,14 @@
 publicHost: https://auth.kompass.gg
 keyPath: /etc/ghost-idp/certs/tls.key
 
+attestation:
+  enabled: false
+  requiredFor:
+    - mobile
+  headerName: X-Device-Id
+  formField: device_id
+  provider: noop
+
 token:
   ttl: 2h
   config:

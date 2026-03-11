@@ -164,6 +164,18 @@ func TestLoadConfig(t *testing.T) {
 		if appConfig.Token.TTL != "2h" {
 			t.Errorf("Expected default TTL, got: %s", appConfig.Token.TTL)
 		}
+		if appConfig.Attestation.Enabled {
+			t.Error("Expected attestation to be disabled by default")
+		}
+		if appConfig.Attestation.HeaderName != "X-Device-Id" {
+			t.Errorf("Expected default attestation header, got: %s", appConfig.Attestation.HeaderName)
+		}
+		if appConfig.Attestation.FormField != "device_id" {
+			t.Errorf("Expected default attestation form field, got: %s", appConfig.Attestation.FormField)
+		}
+		if appConfig.Attestation.Provider != "noop" {
+			t.Errorf("Expected default attestation provider noop, got: %s", appConfig.Attestation.Provider)
+		}
 	})
 
 	t.Run("env var overrides", func(t *testing.T) {
@@ -179,10 +191,30 @@ func TestLoadConfig(t *testing.T) {
 		if err := os.Setenv("TOKEN_TTL", "5h"); err != nil {
 			t.Fatalf("Failed to set env var: %v", err)
 		}
+		if err := os.Setenv("ATTESTATION_ENABLED", "true"); err != nil {
+			t.Fatalf("Failed to set env var: %v", err)
+		}
+		if err := os.Setenv("ATTESTATION_REQUIRED_FOR", "mobile,web"); err != nil {
+			t.Fatalf("Failed to set env var: %v", err)
+		}
+		if err := os.Setenv("ATTESTATION_HEADER", "X-Attestation"); err != nil {
+			t.Fatalf("Failed to set env var: %v", err)
+		}
+		if err := os.Setenv("ATTESTATION_FORM_FIELD", "attestation_payload"); err != nil {
+			t.Fatalf("Failed to set env var: %v", err)
+		}
+		if err := os.Setenv("ATTESTATION_PROVIDER", "stub"); err != nil {
+			t.Fatalf("Failed to set env var: %v", err)
+		}
 		defer func() {
 			_ = os.Unsetenv("JWT_KEY_PATH")
 			_ = os.Unsetenv("PUBLIC_HOST")
 			_ = os.Unsetenv("TOKEN_TTL")
+			_ = os.Unsetenv("ATTESTATION_ENABLED")
+			_ = os.Unsetenv("ATTESTATION_REQUIRED_FOR")
+			_ = os.Unsetenv("ATTESTATION_HEADER")
+			_ = os.Unsetenv("ATTESTATION_FORM_FIELD")
+			_ = os.Unsetenv("ATTESTATION_PROVIDER")
 		}()
 
 		err := LoadConfig("non_existent_config.yaml")
@@ -198,6 +230,21 @@ func TestLoadConfig(t *testing.T) {
 		}
 		if appConfig.Token.TTL != "5h" {
 			t.Errorf("Expected TTL from env var, got: %s", appConfig.Token.TTL)
+		}
+		if !appConfig.Attestation.Enabled {
+			t.Error("Expected attestation enabled from env var")
+		}
+		if len(appConfig.Attestation.RequiredFor) != 2 {
+			t.Errorf("Expected 2 requiredFor entries, got: %d", len(appConfig.Attestation.RequiredFor))
+		}
+		if appConfig.Attestation.HeaderName != "X-Attestation" {
+			t.Errorf("Expected attestation header from env var, got: %s", appConfig.Attestation.HeaderName)
+		}
+		if appConfig.Attestation.FormField != "attestation_payload" {
+			t.Errorf("Expected attestation form field from env var, got: %s", appConfig.Attestation.FormField)
+		}
+		if appConfig.Attestation.Provider != "stub" {
+			t.Errorf("Expected attestation provider from env var, got: %s", appConfig.Attestation.Provider)
 		}
 	})
 }

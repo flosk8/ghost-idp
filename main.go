@@ -27,6 +27,7 @@ func main() {
 	} else {
 		appLogger = &TextLogger{}
 	}
+	initAttestationProvider()
 
 	// Initialize the client lookup map
 	initClientLookup()

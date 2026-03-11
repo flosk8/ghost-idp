@@ -24,14 +24,21 @@ To receive a token, a client must send a `POST` request to the `/token` endpoint
 |-------------------|----------|-----------------------------------------------------------------------------|
 | `grant_type`      | Yes      | Must be set to `client_credentials`.                                        |
 | `client_id`       | Yes      | The unique identifier of the client as defined in `config.yaml`.            |
-| `device_id`       | **Mobile Only** | A unique identifier for the mobile device instance.                         |
+| `device_id`       | **Mobile Only** | Device identifier — sent as form field or via `X-Device-Id` header (one of the two is required). Becomes the `device_id` claim in the JWT. |
 
 ### Example Request
 
 ```bash
+# Mobile client — device_id as form field
 curl -X POST http://localhost:8080/token \
      -H "Content-Type: application/x-www-form-urlencoded" \
-     -d "grant_type=client_credentials&client_id=your-client-name"
+     -d "grant_type=client_credentials&client_id=your-mobile-client&device_id=my-device-id"
+
+# Mobile client — device_id as header
+curl -X POST http://localhost:8080/token \
+     -H "Content-Type: application/x-www-form-urlencoded" \
+     -H "X-Device-Id: my-device-id" \
+     -d "grant_type=client_credentials&client_id=your-mobile-client"
 ```
 
 The IDP validates the `client_id` and its associated configuration:
@@ -39,7 +46,8 @@ The IDP validates the `client_id` and its associated configuration:
     -   Validates the `Origin` header against `allowedOrigins`.
     -   Receives a `Set-Cookie` header with the JWT for easy browser integration.
 -   **Mobile Clients**:
-    -   Must provide a `device_id`.
+    -   Must provide a device identifier via the `device_id` form field **or** the `X-Device-Id` header (form field takes precedence if both are set).
+    -   The value is included as the `device_id` claim in the JWT.
     -   Do not receive a cookie and are expected to use the `access_token` from the JSON response body.
 
 ## Configuration
@@ -57,6 +65,14 @@ This file defines token profiles and allowed clients.
 publicHost: http://localhost:8080
 # Path to the ECDSA private key
 keyPath: ./tls.key
+
+attestation:
+  enabled: false
+  requiredFor:
+    - mobile
+  headerName: X-Device-Id
+  formField: device_id
+  provider: noop
 
 # Token configuration section
 token:
@@ -118,6 +134,11 @@ The Time-To-Live (TTL) for a token is resolved with the following priority:
 | `LOG_FORMAT`                  | The format for application logs (`text` or `json`).                         | `text`                                |
 | `TOKEN_TTL`                   | Overrides the **global** default token TTL (e.g., `30d`, `12h`).             | `token.ttl` from `config.yaml`        |
 | `TOKEN_CONFIG_<PROFILE>_TTL`  | Overrides the TTL for a **specific profile** (e.g., `TOKEN_CONFIG_PROD_TTL=1h`). | `ttl` from the profile in `config.yaml` |
+| `ATTESTATION_ENABLED`         | Enables request-time attestation validation.                                 | `false`                               |
+| `ATTESTATION_REQUIRED_FOR`    | Comma-separated client types requiring attestation (e.g. `mobile,web`).     | `mobile`                              |
+| `ATTESTATION_HEADER`          | Header used to read attestation data.                                        | `X-Device-Id`                         |
+| `ATTESTATION_FORM_FIELD`      | Form field used to read attestation data.                                    | `device_id`                           |
+| `ATTESTATION_PROVIDER`        | Attestation provider id (`noop` scaffold by default).                        | `noop`                                |
 
 
 ## Getting Started
@@ -199,9 +220,92 @@ go test -v -run TestTokenHandler_SuccessfulMobileToken
 
 See [TESTING.md](TESTING.md) for detailed testing documentation.
 
-## Outlook
+## App Attestation
 
-### App Attestation
-For enhanced mobile client security, App Attestation can be implemented. This would involve the mobile client sending an attestation payload to the `/token` endpoint, which the IDP would then verify with Apple or Google before issuing a token.
+Ghost-IDP includes an attestation scaffold that can verify that token requests originate from genuine, unmodified app installs before issuing a JWT.
+
+### How It Works
+
+1. The mobile client sends a device identifier / attestation payload via the `device_id` form field or the `X-Device-Id` header.
+2. Ghost-IDP extracts the value and passes it to the configured `AttestationProvider`.
+3. If the provider accepts the token, the JWT will contain extra claims:
+   - `attested: true`
+   - `attestation_level: "<value from provider>"`
+4. If the provider rejects it, the request is denied with `400` (missing) or `403` (invalid).
+
+### Enabling Attestation
+
+Set `attestation.enabled: true` in `config.yaml` or via environment variable:
+
+```yaml
+attestation:
+  enabled: true
+  requiredFor:
+    - mobile        # enforce only for mobile clients; add "web" to also enforce for web clients
+  headerName: X-Device-Id
+  formField: device_id
+  provider: noop    # replace with your provider id once implemented
+```
+
+Or via environment variables:
+
+```bash
+ATTESTATION_ENABLED=true
+ATTESTATION_REQUIRED_FOR=mobile
+ATTESTATION_PROVIDER=play-integrity   # example
+```
+
+### Adding a Custom Provider
+
+All attestation logic lives in `attestation.go`. To add a real provider:
+
+1. **Implement the interface** — create a new file, e.g. `attestation_play_integrity.go`:
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "net/http"
+)
+
+type PlayIntegrityProvider struct {
+    // e.g. GoogleCredentials, ProjectID, etc.
+}
+
+func (p PlayIntegrityProvider) Verify(ctx context.Context, token string, r *http.Request, clientID, clientType string) (*AttestationResult, error) {
+    // Call the Play Integrity API here
+    // Return AttestationResult on success, error on failure
+    if token == "" {
+        return nil, fmt.Errorf("empty token")
+    }
+    // ... real verification logic ...
+    return &AttestationResult{Level: "strong"}, nil
+}
+```
+
+2. **Register the provider** — add a case in `initAttestationProvider()` in `attestation.go`:
+
+```go
+case "play-integrity":
+    attestationProvider = PlayIntegrityProvider{ /* inject config */ }
+case "app-attest":
+    attestationProvider = AppleAppAttestProvider{ /* inject config */ }
+```
+
+3. **Set the provider** in `config.yaml`:
+
+```yaml
+attestation:
+  enabled: true
+  provider: play-integrity
+```
+
+### Platform Documentation
+
 - **Android**: [Play Integrity API](https://developer.android.com/google/play/integrity/standard)
 - **Apple**: [App Attest](https://developer.apple.com/documentation/devicecheck/validating-apps-that-connect-to-your-server)
+
+## Outlook
+

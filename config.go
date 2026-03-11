@@ -35,12 +35,22 @@ type Clients struct {
 	Mobile []Client `yaml:"mobile"`
 }
 
+// AttestationConfig holds the configuration for attestation options
+type AttestationConfig struct {
+	Enabled     bool     `yaml:"enabled"`
+	RequiredFor []string `yaml:"requiredFor"`
+	HeaderName  string   `yaml:"headerName"`
+	FormField   string   `yaml:"formField"`
+	Provider    string   `yaml:"provider"`
+}
+
 // AppConfig holds the entire application configuration
 type AppConfig struct {
-	Token      TokenConfig `yaml:"token"`
-	Clients    Clients     `yaml:"clients"`
-	KeyPath    string      `yaml:"keyPath,omitempty"`
-	PublicHost string      `yaml:"publicHost,omitempty"`
+	Token       TokenConfig       `yaml:"token"`
+	Clients     Clients           `yaml:"clients"`
+	Attestation AttestationConfig `yaml:"attestation,omitempty"`
+	KeyPath     string            `yaml:"keyPath,omitempty"`
+	PublicHost  string            `yaml:"publicHost,omitempty"`
 }
 
 // Global variables
@@ -117,6 +127,11 @@ func LoadConfig(configPath string) error {
 	appConfig.KeyPath = "/etc/ghost-idp/certs/tls.key"
 	appConfig.PublicHost = "http://localhost:8080"
 	appConfig.Token.TTL = "2h" // Default for global TTL
+	appConfig.Attestation.Enabled = false
+	appConfig.Attestation.RequiredFor = []string{"mobile"}
+	appConfig.Attestation.HeaderName = "X-Device-Id"
+	appConfig.Attestation.FormField = "device_id"
+	appConfig.Attestation.Provider = "noop"
 
 	// 2. Read config.yaml and unmarshal it
 	data, err := os.ReadFile(configPath)
@@ -145,6 +160,33 @@ func LoadConfig(configPath string) error {
 	if tokenTTL, ok := os.LookupEnv("TOKEN_TTL"); ok {
 		appConfig.Token.TTL = tokenTTL
 		appLogger.Info("Global token TTL overridden by TOKEN_TTL environment variable: %s", tokenTTL)
+	}
+	if attestationEnabled, ok := os.LookupEnv("ATTESTATION_ENABLED"); ok {
+		if enabled, err := strconv.ParseBool(attestationEnabled); err == nil {
+			appConfig.Attestation.Enabled = enabled
+		} else {
+			appLogger.Warn("Invalid ATTESTATION_ENABLED value '%s'. Keeping current value: %t", attestationEnabled, appConfig.Attestation.Enabled)
+		}
+	}
+	if requiredFor, ok := os.LookupEnv("ATTESTATION_REQUIRED_FOR"); ok {
+		parts := strings.Split(requiredFor, ",")
+		resolved := make([]string, 0, len(parts))
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				resolved = append(resolved, p)
+			}
+		}
+		appConfig.Attestation.RequiredFor = resolved
+	}
+	if headerName, ok := os.LookupEnv("ATTESTATION_HEADER"); ok && strings.TrimSpace(headerName) != "" {
+		appConfig.Attestation.HeaderName = strings.TrimSpace(headerName)
+	}
+	if formField, ok := os.LookupEnv("ATTESTATION_FORM_FIELD"); ok && strings.TrimSpace(formField) != "" {
+		appConfig.Attestation.FormField = strings.TrimSpace(formField)
+	}
+	if provider, ok := os.LookupEnv("ATTESTATION_PROVIDER"); ok && strings.TrimSpace(provider) != "" {
+		appConfig.Attestation.Provider = strings.TrimSpace(provider)
 	}
 
 	// 4. Override profile-specific TTLs with environment variables

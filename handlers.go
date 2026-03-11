@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -146,9 +147,13 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 	// 4. Additional checks based on client type
 	var deviceID string
 	if clientType == "mobile" {
-		deviceID = r.FormValue("device_id")
+		// Accept device_id from form field or X-Device-Id header (either is required)
+		deviceID = strings.TrimSpace(r.FormValue("device_id"))
 		if deviceID == "" {
-			appLogger.Warn("Token request from mobile client '%s' missing 'device_id' parameter.", clientID)
+			deviceID = strings.TrimSpace(r.Header.Get("X-Device-Id"))
+		}
+		if deviceID == "" {
+			appLogger.Warn("Token request from mobile client '%s' missing device identifier (device_id or X-Device-Id header).", clientID)
 			http.Error(w, "device_id is required for mobile clients", http.StatusBadRequest)
 			return
 		}
@@ -190,6 +195,17 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 		appLogger.Info("Origin '%s' validated successfully for client '%s'.", origin, clientID)
 	}
 
+	attestationResult, err := verifyRequestAttestation(r, clientID, clientType)
+	if err != nil {
+		status := http.StatusForbidden
+		if errors.Is(err, ErrAttestationMissing) {
+			status = http.StatusBadRequest
+		}
+		appLogger.Warn("Attestation failed for client '%s': %v", clientID, err)
+		http.Error(w, err.Error(), status)
+		return
+	}
+
 	// 5. Generate the token
 	keyMu.RLock()
 	defer keyMu.RUnlock()
@@ -227,6 +243,12 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if deviceID != "" {
 		claims["device_id"] = deviceID
+	}
+	if attestationResult != nil {
+		claims["attested"] = true
+		if attestationResult.Level != "" {
+			claims["attestation_level"] = attestationResult.Level
+		}
 	}
 
 	// Add client IP to claims
