@@ -58,12 +58,12 @@ func TestJWKSHandler(t *testing.T) {
 
 	t.Run("no signing key loaded", func(t *testing.T) {
 		keyMu.Lock()
-		originalKey := signingKey
-		signingKey = nil
+		originalKey := currentKey
+		currentKey = nil
 		keyMu.Unlock()
 		defer func() {
 			keyMu.Lock()
-			signingKey = originalKey
+			currentKey = originalKey
 			keyMu.Unlock()
 		}()
 
@@ -412,7 +412,7 @@ func TestTokenHandler_SuccessfulMobileToken(t *testing.T) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		keyMu.RLock()
 		defer keyMu.RUnlock()
-		return &signingKey.PublicKey, nil
+		return &currentKey.key.PublicKey, nil
 	})
 
 	if err != nil {
@@ -469,12 +469,12 @@ func TestReadyHandler(t *testing.T) {
 
 	t.Run("key not loaded", func(t *testing.T) {
 		keyMu.Lock()
-		originalKey := signingKey
-		signingKey = nil
+		originalKey := currentKey
+		currentKey = nil
 		keyMu.Unlock()
 		defer func() {
 			keyMu.Lock()
-			signingKey = originalKey
+			currentKey = originalKey
 			keyMu.Unlock()
 		}()
 
@@ -617,7 +617,7 @@ func TestTokenHandler_UsesForwardedClientIP(t *testing.T) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		keyMu.RLock()
 		defer keyMu.RUnlock()
-		return &signingKey.PublicKey, nil
+		return &currentKey.key.PublicKey, nil
 	})
 	if err != nil {
 		t.Fatalf("Failed to parse token: %v", err)

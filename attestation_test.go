@@ -155,7 +155,7 @@ func TestTokenHandler_AttestationEnforcement(t *testing.T) {
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 			keyMu.RLock()
 			defer keyMu.RUnlock()
-			return &signingKey.PublicKey, nil
+			return &currentKey.key.PublicKey, nil
 		})
 		if err != nil {
 			t.Fatalf("failed to parse jwt: %v", err)

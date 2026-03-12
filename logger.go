@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-// Logger Interface
 type Logger interface {
 	Info(format string, v ...interface{})
 	Warn(format string, v ...interface{})
@@ -16,7 +15,6 @@ type Logger interface {
 	Fatal(format string, v ...interface{})
 }
 
-// TextLogger implementation
 type TextLogger struct{}
 
 func (l *TextLogger) Info(format string, v ...interface{}) {
@@ -35,7 +33,6 @@ func (l *TextLogger) Fatal(format string, v ...interface{}) {
 	log.Fatalf("FATAL: "+format, v...)
 }
 
-// JSONLogger implementation
 type JSONLogger struct{}
 
 func (l *JSONLogger) logJSON(level, format string, v ...interface{}) {
@@ -67,5 +64,5 @@ func (l *JSONLogger) Error(format string, v ...interface{}) {
 
 func (l *JSONLogger) Fatal(format string, v ...interface{}) {
 	l.logJSON("fatal", format, v...)
-	os.Exit(1) // JSONLogger needs to explicitly exit on Fatal
+	os.Exit(1)
 }

@@ -42,7 +42,11 @@ func TestLoadKey_ValidECKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create key file: %v", err)
 	}
-	defer keyFile.Close()
+	defer func() {
+		if err := keyFile.Close(); err != nil {
+			t.Errorf("failed to close key file: %v", err)
+		}
+	}()
 
 	if err := pem.Encode(keyFile, pemBlock); err != nil {
 		t.Fatalf("Failed to encode PEM: %v", err)
@@ -57,7 +61,7 @@ func TestLoadKey_ValidECKey(t *testing.T) {
 
 	keyMu.RLock()
 	defer keyMu.RUnlock()
-	if signingKey == nil {
+	if currentKey == nil {
 		t.Error("Expected signing key to be loaded")
 	}
 }
@@ -92,7 +96,11 @@ func TestLoadKey_ValidPKCS8Key(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create key file: %v", err)
 	}
-	defer keyFile.Close()
+	defer func() {
+		if err := keyFile.Close(); err != nil {
+			t.Errorf("failed to close key file: %v", err)
+		}
+	}()
 
 	if err := pem.Encode(keyFile, pemBlock); err != nil {
 		t.Fatalf("Failed to encode PEM: %v", err)
@@ -107,7 +115,7 @@ func TestLoadKey_ValidPKCS8Key(t *testing.T) {
 
 	keyMu.RLock()
 	defer keyMu.RUnlock()
-	if signingKey == nil {
+	if currentKey == nil {
 		t.Error("Expected signing key to be loaded")
 	}
 }
@@ -162,7 +170,11 @@ func TestLoadKey_InvalidKeyFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create key file: %v", err)
 	}
-	defer keyFile.Close()
+	defer func() {
+		if err := keyFile.Close(); err != nil {
+			t.Errorf("failed to close key file: %v", err)
+		}
+	}()
 
 	if err := pem.Encode(keyFile, pemBlock); err != nil {
 		t.Fatalf("Failed to encode PEM: %v", err)
@@ -204,7 +216,11 @@ func TestLoadKey_ConcurrentAccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create key file: %v", err)
 	}
-	defer keyFile.Close()
+	defer func() {
+		if err := keyFile.Close(); err != nil {
+			t.Errorf("failed to close key file: %v", err)
+		}
+	}()
 
 	if err := pem.Encode(keyFile, pemBlock); err != nil {
 		t.Fatalf("Failed to encode PEM: %v", err)
@@ -231,7 +247,7 @@ func TestLoadKey_ConcurrentAccess(t *testing.T) {
 
 	keyMu.RLock()
 	defer keyMu.RUnlock()
-	if signingKey == nil {
+	if currentKey == nil {
 		t.Error("Expected signing key to be loaded after concurrent access")
 	}
 }
@@ -287,11 +303,11 @@ func TestWatchKeyRotation_DirectoryCreation(t *testing.T) {
 
 func TestKeyManagement_Integration(t *testing.T) {
 	originalLogger := appLogger
-	originalKey := signingKey
+	originalKey := currentKey
 	defer func() {
 		appLogger = originalLogger
 		keyMu.Lock()
-		signingKey = originalKey
+		currentKey = originalKey
 		keyMu.Unlock()
 	}()
 	appLogger = &TextLogger{}
@@ -321,9 +337,11 @@ func TestKeyManagement_Integration(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		defer keyFile.Close()
-
-		return pem.Encode(keyFile, pemBlock)
+		if err := pem.Encode(keyFile, pemBlock); err != nil {
+			_ = keyFile.Close()
+			return err
+		}
+		return keyFile.Close()
 	}
 
 	// Write initial key
@@ -339,7 +357,7 @@ func TestKeyManagement_Integration(t *testing.T) {
 	}
 
 	keyMu.RLock()
-	firstKey := signingKey
+	firstKey := currentKey
 	keyMu.RUnlock()
 
 	if firstKey == nil {
@@ -362,15 +380,14 @@ func TestKeyManagement_Integration(t *testing.T) {
 	}
 
 	keyMu.RLock()
-	secondKey := signingKey
+	secondKey := currentKey
 	keyMu.RUnlock()
 
 	if secondKey == nil {
 		t.Fatal("Expected second key to be loaded")
 	}
 
-	// Keys should be different
-	if firstKey.X.Cmp(secondKey.X) == 0 && firstKey.Y.Cmp(secondKey.Y) == 0 {
+	if firstKey.key.X.Cmp(secondKey.key.X) == 0 && firstKey.key.Y.Cmp(secondKey.key.Y) == 0 {
 		t.Error("Expected keys to be different after rotation")
 	}
 }

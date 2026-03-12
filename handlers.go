@@ -21,7 +21,7 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 
 func readyHandler(w http.ResponseWriter, _ *http.Request) {
 	keyMu.RLock()
-	ready := signingKey != nil
+	ready := currentKey != nil
 	keyMu.RUnlock()
 
 	if !ready {
@@ -40,12 +40,11 @@ func writeJSONError(w http.ResponseWriter, status int, message string) {
 }
 
 func jwksHandler(w http.ResponseWriter, r *http.Request) {
-	// Allow public CORS access so tools like jwt.io can fetch the public key automatically
+	// Public CORS access allows tools like jwt.io to fetch the public key automatically.
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
-	// Handle preflight requests
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -54,30 +53,30 @@ func jwksHandler(w http.ResponseWriter, r *http.Request) {
 	keyMu.RLock()
 	defer keyMu.RUnlock()
 
-	if signingKey == nil {
+	if currentKey == nil {
 		appLogger.Error("JWKS request received but signing key not loaded.")
 		writeJSONError(w, http.StatusInternalServerError, "Key not loaded")
 		return
 	}
 
-	pub := signingKey.Public().(*ecdsa.PublicKey)
-	x := base64.RawURLEncoding.EncodeToString(pub.X.Bytes())
-	y := base64.RawURLEncoding.EncodeToString(pub.Y.Bytes())
+	keys := []map[string]string{jwkFromEntry(currentKey)}
 
-	resp := map[string]interface{}{
-		"keys": []map[string]string{{
-			"kty": "EC",
-			"crv": "P-256",
-			"use": "sig",
-			"kid": kid,
-			"x":   x,
-			"y":   y,
-			"alg": "ES256",
-		}},
-	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{"keys": keys}); err != nil {
 		appLogger.Error("Failed to encode JWKS response: %v", err)
+	}
+}
+
+func jwkFromEntry(e *keyEntry) map[string]string {
+	pub := e.key.Public().(*ecdsa.PublicKey)
+	return map[string]string{
+		"kty": "EC",
+		"crv": "P-256",
+		"use": "sig",
+		"kid": e.kid,
+		"x":   base64.RawURLEncoding.EncodeToString(pub.X.Bytes()),
+		"y":   base64.RawURLEncoding.EncodeToString(pub.Y.Bytes()),
+		"alg": "ES256",
 	}
 }
 
@@ -113,15 +112,34 @@ func extractClientIP(r *http.Request) string {
 	return ""
 }
 
+func isOriginAllowed(origin string, allowedOrigins []string) bool {
+	for _, ao := range allowedOrigins {
+		if ao == "*" || ao == origin {
+			return true
+		}
+	}
+	return false
+}
+
+func extractCookieDomain(host string) string {
+	domain := strings.Split(strings.Replace(host, "https://", "", 1), "/")[0]
+	if strings.HasPrefix(domain, "localhost") {
+		return "localhost"
+	}
+	parts := strings.Split(domain, ".")
+	if len(parts) > 2 {
+		return "." + parts[len(parts)-2] + "." + parts[len(parts)-1]
+	}
+	return domain
+}
+
 func tokenHandler(w http.ResponseWriter, r *http.Request) {
-	// Parse the form data for x-www-form-urlencoded
 	if err := r.ParseForm(); err != nil {
 		appLogger.Error("Failed to parse form data: %v", err)
 		writeJSONError(w, http.StatusBadRequest, "Bad Request")
 		return
 	}
 
-	// 1. Get client_id from form data
 	clientID := r.FormValue("client_id")
 	if clientID == "" {
 		appLogger.Warn("Token request missing 'client_id' parameter in form data.")
@@ -129,7 +147,6 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Validate grant_type
 	grantType := r.FormValue("grant_type")
 	if grantType == "" {
 		appLogger.Warn("Token request missing 'grant_type' parameter in form_data.")
@@ -142,7 +159,6 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Validate client_id and get client_type from the lookup map
 	clientType, ok := clientLookupMap[clientID]
 	if !ok {
 		appLogger.Warn("Invalid client_id provided: %s", clientID)
@@ -150,9 +166,8 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. Additional checks based on client type
 	var deviceID string
-	if clientType == "mobile" {
+	if clientType == clientTypeMobile {
 		deviceIDHeader := attestationHeaderName()
 		deviceID = strings.TrimSpace(r.Header.Get(deviceIDHeader))
 		if deviceID == "" {
@@ -161,9 +176,8 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		appLogger.Info("Processing token request for mobile client: %s with device ID: %s", clientID, deviceID)
-	} else if clientType == "web" {
+	} else if clientType == clientTypeWeb {
 		appLogger.Info("Processing token request for web client: %s", clientID)
-		// Validate Origin header for web clients
 		origin := r.Header.Get("Origin")
 		if origin == "" {
 			appLogger.Warn("Token request from web client '%s' missing 'Origin' header.", clientID)
@@ -178,19 +192,7 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		isOriginAllowed := false
-		for _, ao := range allowedOrigins {
-			if ao == "*" {
-				isOriginAllowed = true
-				break
-			}
-			if ao == origin {
-				isOriginAllowed = true
-				break
-			}
-		}
-
-		if !isOriginAllowed {
+		if !isOriginAllowed(origin, allowedOrigins) {
 			appLogger.Warn("Origin '%s' not allowed for client '%s'. Allowed: %v", origin, clientID, allowedOrigins)
 			writeJSONError(w, http.StatusForbidden, "Origin not allowed")
 			return
@@ -209,28 +211,25 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 5. Generate the token
 	keyMu.RLock()
 	defer keyMu.RUnlock()
 
-	if signingKey == nil {
+	if currentKey == nil {
 		appLogger.Warn("Token request for client '%s' received, but signing key is not loaded.", clientID)
 		writeJSONError(w, http.StatusServiceUnavailable, "Identity Provider is starting up...")
 		return
 	}
 
-	// Determine the audience
 	var audience []string
 	if aud, found := audienceLookupMap[clientID]; found && len(aud) > 0 {
 		audience = aud
 	} else {
-		audience = []string{clientID} // Fallback to clientID if no audience is configured
+		audience = []string{clientID}
 	}
 
-	// Determine the TTL
 	tokenTTL, ttlFound := ttlLookupMap[clientID]
 	if !ttlFound {
-		// This should not happen if initClientLookup is correct, but as a safeguard:
+		// Should never happen if initClientLookup ran correctly, but guard against config errors.
 		appLogger.Error("TTL not found for client '%s'. This indicates a configuration error.", clientID)
 		writeJSONError(w, http.StatusInternalServerError, "Internal Server Error")
 		return
@@ -240,8 +239,8 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 		"iss":       formatHost(appConfig.PublicHost),
 		"sub":       "anon-" + time.Now().Format("20060102150405"),
 		"role":      "guest",
-		"aud":       audience, // Use configured audience
-		"client_id": clientID, // Explicit client_id claim
+		"aud":       audience,
+		"client_id": clientID,
 		"exp":       time.Now().Add(tokenTTL).Unix(),
 	}
 	if deviceID != "" {
@@ -254,7 +253,6 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Add client IP to claims
 	if clientIP := extractClientIP(r); clientIP != "" {
 		claims["client_ip"] = clientIP
 	} else {
@@ -262,28 +260,17 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
-	token.Header["kid"] = kid
+	token.Header["kid"] = currentKey.kid
 	token.Header["jku"] = fmt.Sprintf("%s/.well-known/jwks.json", formatHost(appConfig.PublicHost))
 
-	tokenString, err := token.SignedString(signingKey)
+	tokenString, err := token.SignedString(currentKey.key)
 	if err != nil {
 		appLogger.Error("Failed to sign token for client '%s': %v", clientID, err)
 		writeJSONError(w, http.StatusInternalServerError, "Internal Server Error")
 		return
 	}
 
-	// 6. Set cookie only for web clients
-	if clientType == "web" {
-		cookieDomain := strings.Split(strings.Replace(appConfig.PublicHost, "https://", "", 1), "/")[0]
-		if strings.HasPrefix(cookieDomain, "localhost") {
-			cookieDomain = "localhost"
-		} else {
-			parts := strings.Split(cookieDomain, ".")
-			if len(parts) > 2 {
-				cookieDomain = "." + parts[len(parts)-2] + "." + parts[len(parts)-1]
-			}
-		}
-
+	if clientType == clientTypeWeb {
 		http.SetCookie(w, &http.Cookie{
 			Name:     "anon_token",
 			Value:    tokenString,
@@ -291,11 +278,10 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 			Secure:   true,
 			SameSite: http.SameSiteStrictMode,
 			Path:     "/",
-			Domain:   cookieDomain,
+			Domain:   extractCookieDomain(appConfig.PublicHost),
 		})
 	}
 
-	// 7. Send the JSON response
 	response := map[string]interface{}{
 		"access_token": tokenString,
 		"expires_in":   int(tokenTTL.Seconds()),

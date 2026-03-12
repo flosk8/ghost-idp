@@ -21,7 +21,7 @@ const (
 type HMACAttestationProvider struct{}
 
 func (HMACAttestationProvider) Verify(_ context.Context, deviceID string, r *http.Request, clientID, clientType string) (*AttestationResult, error) {
-	if clientType != "mobile" {
+	if clientType != clientTypeMobile {
 		return &AttestationResult{Level: "hmac-not-required"}, nil
 	}
 
