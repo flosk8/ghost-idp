@@ -1,0 +1,16 @@
+sequenceDiagram
+    participant App as Mobile App (Client)
+    participant Server as Auth Server
+
+    Note over App, Server: Attestation is enabled (required for this request)
+
+    App->>Server: POST /token (header: X-Device-Id)
+    Server->>Server: extractAttestationToken(X-Device-Id)
+
+    alt Header missing or empty
+        Server-->>App: 400 Bad Request (attestation missing)
+    else Header present
+        Note over Server: noop accepts any non-empty token
+        Server->>Server: add claims attested=true, attestation_level=stub
+        Server-->>App: 200 OK (access_token)
+    end

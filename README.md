@@ -229,6 +229,11 @@ See [TESTING.md](TESTING.md) for detailed testing documentation.
 
 Ghost-IDP includes an attestation scaffold that can verify that token requests originate from genuine, unmodified app installs before issuing a JWT.
 
+### Ablaufdiagramme
+
+- `hmac` provider: `doc/hmac.mermaid`
+- `noop` provider: `doc/noop.mermaid`
+
 ### How It Works
 
 1. The mobile client sends a device identifier / attestation payload via the `X-Device-Id` header.
