@@ -45,3 +45,6 @@ config.local.yaml
 *.iml
 # VSCode
 # .vscode/
+
+# Local Copilot prompt instructions
+.github/copilot-instructions.md
