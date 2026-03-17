@@ -174,6 +174,19 @@ func tokenRequestDelayDuration(cfg TokenRequestDelayConfig) time.Duration {
 }
 
 func tokenHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		appLogger.Warn("Token endpoint called with invalid method: %s", r.Method)
+		writeOAuthError(w, http.StatusMethodNotAllowed, "invalid_request", "method must be POST", appConfig.HideErrorDescription)
+		return
+	}
+
+	contentType := strings.TrimSpace(r.Header.Get("Content-Type"))
+	if contentType == "" || (!strings.HasPrefix(contentType, "application/x-www-form-urlencoded") && contentType != "application/x-www-form-urlencoded") {
+		appLogger.Warn("Token request with invalid Content-Type: %s", contentType)
+		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "content-type must be application/x-www-form-urlencoded", appConfig.HideErrorDescription)
+		return
+	}
+
 	if err := r.ParseForm(); err != nil {
 		appLogger.Error("Failed to parse form data: %v", err)
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "failed to parse form body", appConfig.HideErrorDescription)
@@ -227,13 +240,13 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 		allowedOrigins, originsFound := originLookupMap[clientID]
 		if !originsFound || len(allowedOrigins) == 0 {
 			appLogger.Warn("No allowed origins configured for web client '%s'. Denying request from origin '%s'.", clientID, origin)
-			writeOAuthError(w, http.StatusForbidden, "invalid_client", "client not configured for origin validation", appConfig.HideErrorDescription)
+			writeOAuthError(w, http.StatusBadRequest, "invalid_request", "client not configured for origin validation", appConfig.HideErrorDescription)
 			return
 		}
 
 		if !isOriginAllowed(origin, allowedOrigins) {
 			appLogger.Warn("Origin '%s' not allowed for client '%s'. Allowed: %v", origin, clientID, allowedOrigins)
-			writeOAuthError(w, http.StatusForbidden, "invalid_client", "origin not allowed", appConfig.HideErrorDescription)
+			writeOAuthError(w, http.StatusBadRequest, "invalid_request", "origin not allowed", appConfig.HideErrorDescription)
 			return
 		}
 		appLogger.Info("Origin '%s' validated successfully for client '%s'.", origin, clientID)
@@ -354,7 +367,7 @@ func oauthMetadataHandler(w http.ResponseWriter, r *http.Request) {
 		"issuer":                                publicHost,
 		"token_endpoint":                        publicHost + "/sso/token",
 		"jwks_uri":                              publicHost + "/.well-known/jwks.json",
-		"token_endpoint_auth_methods_supported": []string{"client_id_only"},
+		"token_endpoint_auth_methods_supported": []string{"none"},
 
 		// RFC 8414 Recommended Claims
 		"grant_types_supported": []string{

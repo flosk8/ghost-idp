@@ -308,16 +308,66 @@ func TestTokenHandler_WebWithInvalidOrigin(t *testing.T) {
 
 	tokenHandler(w, req)
 
-	if w.Code != http.StatusForbidden {
-		t.Errorf("Expected status 403, got: %d", w.Code)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400, got: %d", w.Code)
 	}
 
 	body := w.Body.String()
-	if !strings.Contains(body, `"error":"invalid_client"`) {
-		t.Errorf("Expected OAuth error invalid_client, got: %s", body)
+	if !strings.Contains(body, `"error":"invalid_request"`) {
+		t.Errorf("Expected OAuth error invalid_request, got: %s", body)
 	}
 	if !strings.Contains(body, "origin not allowed") {
 		t.Errorf("Expected error description about origin not allowed, got: %s", body)
+	}
+}
+
+func TestTokenHandler_InvalidMethod(t *testing.T) {
+	originalLogger := appLogger
+	defer func() { appLogger = originalLogger }()
+	appLogger = &TextLogger{}
+
+	form := url.Values{}
+	form.Set("client_id", "test-client")
+	form.Set("grant_type", "client_credentials")
+
+	req := httptest.NewRequest(http.MethodGet, "/sso/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	tokenHandler(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("Expected status 405, got: %d", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, `"error":"invalid_request"`) {
+		t.Errorf("Expected OAuth error invalid_request, got: %s", body)
+	}
+}
+
+func TestTokenHandler_InvalidContentType(t *testing.T) {
+	originalLogger := appLogger
+	defer func() { appLogger = originalLogger }()
+	appLogger = &TextLogger{}
+
+	form := url.Values{}
+	form.Set("client_id", "test-client")
+	form.Set("grant_type", "client_credentials")
+
+	req := httptest.NewRequest(http.MethodPost, "/sso/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	tokenHandler(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400, got: %d", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, `"error":"invalid_request"`) {
+		t.Errorf("Expected OAuth error invalid_request, got: %s", body)
 	}
 }
 
@@ -1125,8 +1175,8 @@ func TestOAuthMetadataHandler(t *testing.T) {
 
 	// Verify token_endpoint_auth_methods_supported
 	if authMethods, ok := metadata["token_endpoint_auth_methods_supported"].([]interface{}); ok {
-		if len(authMethods) == 0 {
-			t.Error("token_endpoint_auth_methods_supported should not be empty")
+		if len(authMethods) != 1 || authMethods[0] != "none" {
+			t.Errorf("token_endpoint_auth_methods_supported should be [\"none\"], got: %v", authMethods)
 		}
 	} else {
 		t.Error("token_endpoint_auth_methods_supported should be an array")

@@ -16,7 +16,7 @@ A lightweight, standalone Identity Provider for generating anonymous JWTs using 
 
 ## How it Works
 
-To receive a token, a client must send a `POST` request to the `/sso/token` endpoint with an `x-www-form-urlencoded` body.
+To receive a token, a client must send a `POST` request to the `/sso/token` endpoint with an `application/x-www-form-urlencoded` body.
 
 ### Request Parameters
 
@@ -25,6 +25,11 @@ To receive a token, a client must send a `POST` request to the `/sso/token` endp
 | `grant_type`      | Yes      | Must be set to `client_credentials`.                                        |
 | `client_id`       | Yes      | The unique identifier of the mobile client as defined in `config.yaml`.     |
 | `device_id`       | Yes      | Form parameter with a device identifier. Required for all mobile client token requests. Becomes the `device_id` claim in the JWT. |
+
+Additional token endpoint requirements:
+
+- Request method must be `POST`.
+- `Content-Type` must be `application/x-www-form-urlencoded`.
 
 ### Example Request
 
@@ -83,6 +88,7 @@ Common error codes:
 - `invalid_request` (missing/invalid request parameters)
 - `unsupported_grant_type` (only `client_credentials` is supported)
 - `invalid_client` (unknown or unauthorized client)
+- `invalid_request` (origin validation failures for web clients)
 - `invalid_grant` (attestation/token validation failed)
 - `temporarily_unavailable` (signing key not ready)
 - `server_error` (unexpected internal error)
@@ -117,18 +123,18 @@ Ghost-IDP implements comprehensive RFC standards for security and interoperabili
 - Implements `client_credentials` grant type
 - Response includes: `access_token`, `token_type` (Bearer), `expires_in` (seconds), `scope`
 - Cache-Control and Pragma headers prevent caching of sensitive responses
+- Enforces `POST` method and `application/x-www-form-urlencoded` content type
 
 **Error Response Headers:**
 - `Cache-Control: no-store` – Prevents caching
 - `Pragma: no-cache` – Legacy cache prevention
-- `Content-Type: application/json;charset=UTF-8` – Proper content type
+- `Content-Type: application/json` – Proper content type
 - `WWW-Authenticate: Bearer error="invalid_client"` – For 401 responses (RFC 2617)
 
 **Error Codes:**
 All error responses follow RFC 6749 Appendix B.1.3:
-- `400 Bad Request` – `invalid_request`, `unsupported_grant_type`
+- `400 Bad Request` – `invalid_request` (including origin validation), `unsupported_grant_type`
 - `401 Unauthorized` – `invalid_client`
-- `403 Forbidden` – Invalid origin (custom extension)
 - `500 Internal Server Error` – `server_error`
 - `503 Service Unavailable` – `temporarily_unavailable`
 
