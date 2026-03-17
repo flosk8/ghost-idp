@@ -119,8 +119,11 @@ func TestTokenHandler_AttestationEnforcement(t *testing.T) {
 		w := httptest.NewRecorder()
 
 		tokenHandler(w, req)
-		if w.Code != http.StatusForbidden {
-			t.Fatalf("expected 403, got %d: %s", w.Code, w.Body.String())
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), `"error":"invalid_grant"`) {
+			t.Fatalf("expected invalid_grant error, got: %s", w.Body.String())
 		}
 	})
 
@@ -164,12 +167,6 @@ func TestTokenHandler_AttestationEnforcement(t *testing.T) {
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
 			t.Fatal("missing claims")
-		}
-		if claims["attested"] != true {
-			t.Fatalf("expected attested=true, got: %v", claims["attested"])
-		}
-		if claims["attestation_level"] != "stub" {
-			t.Fatalf("expected attestation_level=stub, got: %v", claims["attestation_level"])
 		}
 		if claims["device_id"] != "my-device-attestation-payload" {
 			t.Fatalf("expected device_id claim preserved, got: %v", claims["device_id"])

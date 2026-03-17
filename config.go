@@ -89,11 +89,12 @@ type AttestationConfig struct {
 
 // AppConfig holds the entire application configuration.
 type AppConfig struct {
-	Token       TokenConfig       `yaml:"token"`
-	Clients     Clients           `yaml:"clients"`
-	Attestation AttestationConfig `yaml:"attestation,omitempty"`
-	KeyPath     string            `yaml:"keyPath,omitempty"`
-	PublicHost  string            `yaml:"publicHost,omitempty"`
+	Token                TokenConfig       `yaml:"token"`
+	Clients              Clients           `yaml:"clients"`
+	Attestation          AttestationConfig `yaml:"attestation,omitempty"`
+	KeyPath              string            `yaml:"keyPath,omitempty"`
+	PublicHost           string            `yaml:"publicHost,omitempty"`
+	HideErrorDescription bool              `yaml:"hideErrorDescription,omitempty"`
 }
 
 const (
@@ -169,6 +170,7 @@ func LoadConfig(configPath string) error {
 	appConfig.Attestation.Enabled = false
 	appConfig.Attestation.RequiredFor = []string{"mobile"}
 	appConfig.Attestation.Provider = "noop"
+	appConfig.HideErrorDescription = false
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -186,6 +188,9 @@ func LoadConfig(configPath string) error {
 
 	applyEnvOverrides()
 	normalizeTokenRequestDelay()
+	if os.Getenv("HIDE_ERROR_DESCRIPTION") == "true" {
+		appConfig.HideErrorDescription = true
+	}
 	return nil
 }
 

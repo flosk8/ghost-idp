@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -129,8 +130,11 @@ func TestTokenHandler_MissingClientID(t *testing.T) {
 	}
 
 	body := w.Body.String()
+	if !strings.Contains(body, `"error":"invalid_request"`) {
+		t.Errorf("Expected OAuth error invalid_request, got: %s", body)
+	}
 	if !strings.Contains(body, "client_id is required") {
-		t.Errorf("Expected error message about client_id, got: %s", body)
+		t.Errorf("Expected error description about client_id, got: %s", body)
 	}
 }
 
@@ -153,8 +157,11 @@ func TestTokenHandler_MissingGrantType(t *testing.T) {
 	}
 
 	body := w.Body.String()
+	if !strings.Contains(body, `"error":"invalid_request"`) {
+		t.Errorf("Expected OAuth error invalid_request, got: %s", body)
+	}
 	if !strings.Contains(body, "grant_type is required") {
-		t.Errorf("Expected error message about grant_type, got: %s", body)
+		t.Errorf("Expected error description about grant_type, got: %s", body)
 	}
 }
 
@@ -178,8 +185,8 @@ func TestTokenHandler_InvalidGrantType(t *testing.T) {
 	}
 
 	body := w.Body.String()
-	if !strings.Contains(body, "unsupported_grant_type") {
-		t.Errorf("Expected error message about unsupported_grant_type, got: %s", body)
+	if !strings.Contains(body, `"error":"unsupported_grant_type"`) {
+		t.Errorf("Expected OAuth error unsupported_grant_type, got: %s", body)
 	}
 }
 
@@ -201,13 +208,16 @@ func TestTokenHandler_InvalidClient(t *testing.T) {
 
 	tokenHandler(w, req)
 
-	if w.Code != http.StatusForbidden {
-		t.Errorf("Expected status 403, got: %d", w.Code)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("Expected status 401, got: %d", w.Code)
 	}
 
 	body := w.Body.String()
-	if !strings.Contains(body, "Invalid client_id") {
-		t.Errorf("Expected error message about invalid client_id, got: %s", body)
+	if !strings.Contains(body, `"error":"invalid_client"`) {
+		t.Errorf("Expected OAuth error invalid_client, got: %s", body)
+	}
+	if got := w.Header().Get("WWW-Authenticate"); !strings.Contains(got, "invalid_client") {
+		t.Errorf("Expected WWW-Authenticate invalid_client, got: %s", got)
 	}
 }
 
@@ -237,7 +247,10 @@ func TestTokenHandler_MobileWithoutDeviceIDHeader(t *testing.T) {
 
 	body := w.Body.String()
 	if !strings.Contains(body, "device_id") {
-		t.Errorf("Expected error message about X-Device-Id header, got: %s", body)
+		t.Errorf("Expected error description about device_id, got: %s", body)
+	}
+	if !strings.Contains(body, `"error":"invalid_request"`) {
+		t.Errorf("Expected OAuth error invalid_request, got: %s", body)
 	}
 }
 
@@ -300,8 +313,11 @@ func TestTokenHandler_WebWithInvalidOrigin(t *testing.T) {
 	}
 
 	body := w.Body.String()
-	if !strings.Contains(body, "Origin not allowed") {
-		t.Errorf("Expected error message about origin not allowed, got: %s", body)
+	if !strings.Contains(body, `"error":"invalid_client"`) {
+		t.Errorf("Expected OAuth error invalid_client, got: %s", body)
+	}
+	if !strings.Contains(body, "origin not allowed") {
+		t.Errorf("Expected error description about origin not allowed, got: %s", body)
 	}
 }
 
@@ -344,6 +360,12 @@ func TestTokenHandler_WebWithWildcardOrigin(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("Expected status 200, got: %d", w.Code)
+	}
+	if got := w.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Expected Cache-Control no-store, got: %s", got)
+	}
+	if got := w.Header().Get("Pragma"); got != "no-cache" {
+		t.Errorf("Expected Pragma no-cache, got: %s", got)
 	}
 
 	var response map[string]interface{}
@@ -654,5 +676,119 @@ func TestTokenHandler_UsesForwardedClientIP(t *testing.T) {
 
 	if got := claims["client_ip"]; got != "203.0.113.50" {
 		t.Errorf("Expected client_ip 203.0.113.50, got: %v", got)
+	}
+}
+
+func TestGenerateJTI(t *testing.T) {
+	now := time.Now()
+	jti1 := generateJTI("client1", now)
+	jti2 := generateJTI("client2", now)
+	jti3 := generateJTI("client1", now)
+
+	if jti1 == "" {
+		t.Error("JTI should not be empty")
+	}
+
+	if !strings.HasPrefix(jti1, "jti_") {
+		t.Errorf("JTI should have 'jti_' prefix, got: %s", jti1)
+	}
+
+	if jti1 == jti2 {
+		t.Error("Different clients should produce different JTIs")
+	}
+
+	if jti1 != jti3 {
+		t.Error("Same client and timestamp should produce same JTI (deterministic)")
+	}
+}
+
+func TestTokenClaimsRFC7519Compliance(t *testing.T) {
+	if err := loadTestKey(); err != nil {
+		t.Skipf("Could not load test key: %v", err)
+	}
+
+	appConfig.PublicHost = "test.example.com"
+	audienceLookupMap = make(map[string][]string)
+	ttlLookupMap = make(map[string]time.Duration)
+	clientLookupMap = make(map[string]string)
+	originLookupMap = make(map[string][]string)
+
+	audienceLookupMap["test-client"] = []string{"test-aud"}
+	ttlLookupMap["test-client"] = time.Hour
+	clientLookupMap["test-client"] = clientTypeWeb
+	originLookupMap["test-client"] = []string{"https://example.com"}
+
+	form := url.Values{
+		"client_id":  {"test-client"},
+		"grant_type": {"client_credentials"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/sso/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "https://example.com")
+
+	w := httptest.NewRecorder()
+	tokenHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got: %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var response map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	tokenStr, ok := response["access_token"].(string)
+	if !ok {
+		t.Fatal("access_token not found in response")
+	}
+
+	token, err := jwt.ParseWithClaims(tokenStr, jwt.MapClaims{}, func(token *jwt.Token) (interface{}, error) {
+		keyMu.RLock()
+		defer keyMu.RUnlock()
+		if currentKey == nil {
+			return nil, errors.New("key not loaded")
+		}
+		return currentKey.key.Public(), nil
+	})
+	if err != nil {
+		t.Fatalf("Failed to parse token: %v", err)
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		t.Fatal("Failed to read claims")
+	}
+
+	// RFC 7519 required claims
+	if _, exists := claims["iss"]; !exists {
+		t.Error("Missing 'iss' claim (RFC 7519)")
+	}
+	if _, exists := claims["exp"]; !exists {
+		t.Error("Missing 'exp' claim (RFC 7519)")
+	}
+	if _, exists := claims["iat"]; !exists {
+		t.Error("Missing 'iat' claim (RFC 7519)")
+	}
+	if _, exists := claims["jti"]; !exists {
+		t.Error("Missing 'jti' claim (RFC 7519)")
+	}
+
+	// Verify iat is valid timestamp
+	if iat, ok := claims["iat"].(float64); ok {
+		if iat <= 0 {
+			t.Error("'iat' claim should be a positive Unix timestamp")
+		}
+	} else {
+		t.Error("'iat' claim should be a number")
+	}
+
+	// Verify jti format
+	if jti, ok := claims["jti"].(string); ok {
+		if !strings.HasPrefix(jti, "jti_") {
+			t.Errorf("'jti' claim should start with 'jti_', got: %s", jti)
+		}
+	} else {
+		t.Error("'jti' claim should be a string")
 	}
 }

@@ -8,6 +8,7 @@ A lightweight, standalone Identity Provider for generating anonymous JWTs using 
 -   **Key Rotation**: Automatically detects and reloads keys when the key file changes.
 -   **JWKS Endpoint**: Provides a `/.well-known/jwks.json` endpoint for public key discovery.
 -   **Structured Logging**: Supports both plain text and JSON-formatted logs.
+-   **RFC 7519 Compliance**: Includes RFC 7519 standard claims (`iss`, `iat`, `exp`, `jti`).
 -   **Advanced Configuration**:
     -   **Client Whitelisting**: Restricts token issuance to a predefined list of clients.
     -   **Configuration Profiles**: Define token profiles (`dev`, `prod`) with specific TTLs and audiences.
@@ -36,6 +37,61 @@ curl -X POST http://localhost:8080/sso/token \
 
 The IDP validates the `client_id` and its associated configuration, then generates a JWT token with the provided `device_id` claim.
 
+### Token Response Format
+
+The token endpoint returns the following response on success:
+
+```json
+{
+  "access_token": "eyJhbGciOiJFUzI1NiIsImtpZCI6IjZZZGlSRzJLbnRZIiwianRrdSI6Imh0dHBzOi8vbG9jYWxob3N0Ojk2Nzcvd2VsbC1rbm93bi9qd2tzLmpzb24ifQ...",
+  "expires_in": 3600,
+  "token_type": "Bearer",
+  "scope": "guest"
+}
+```
+
+### JWT Claims (RFC 7519 Compliant)
+
+The generated JWT includes the following claims:
+
+| Claim        | Type     | Description                                                                                |
+|--------------|----------|--------------------------------------------------------------------------------------------|
+| `iss`        | string   | Issuer – the public host of the Ghost-IDP server.                                          |
+| `sub`        | string   | Subject – an anonymous identifier composed of "anon-" + YYYYMMDDHHMMSS timestamp.          |
+| `aud`        | array    | Audience – list of intended audiences (from config or defaults to client_id).              |
+| `client_id`  | string   | The client identifier that requested the token.                                            |
+| `client_ip`  | string   | The client's IP address (extracted from request headers or RemoteAddr).                    |
+| `role`       | string   | Fixed role value: `"guest"`.                                                              |
+| `device_id`  | string   | *(Mobile clients only)* The device identifier provided in the request.                     |
+| **`iat`**    | number   | **Issued At** – Unix timestamp when the token was created (RFC 7519 required).             |
+| **`exp`**    | number   | Expiration Time – Unix timestamp when the token expires (RFC 7519 required).               |
+| **`jti`**    | string   | **JWT ID** – Unique token identifier for replay attack prevention (RFC 7519 recommended). Format: `jti_<20-char-hash>` |
+
+### Error Format (`/sso/token`)
+
+The token endpoint returns OAuth-style JSON errors:
+
+```json
+{
+  "error": "invalid_request",
+  "error_description": "device_id is required"
+}
+```
+
+Common error codes:
+
+- `invalid_request` (missing/invalid request parameters)
+- `unsupported_grant_type` (only `client_credentials` is supported)
+- `invalid_client` (unknown or unauthorized client)
+- `invalid_grant` (attestation/token validation failed)
+- `temporarily_unavailable` (signing key not ready)
+- `server_error` (unexpected internal error)
+
+Token endpoint responses include:
+
+- `Cache-Control: no-store`
+- `Pragma: no-cache`
+
 ## Configuration
 
 The application is configured via `config.yaml` and can be extensively overridden with environment variables.
@@ -56,9 +112,7 @@ attestation:
   enabled: false
   requiredFor:
     - mobile
-  headerName: X-Device-Id
-  provider: hmac
-  maxAgeSeconds: 15
+  provider: noop
 
 # Token configuration section
 token:
@@ -121,6 +175,7 @@ The Time-To-Live (TTL) for a token is resolved with the following priority:
 | `ATTESTATION_ENABLED`         | Enables request-time attestation validation.                                 | `false`                               |
 | `ATTESTATION_REQUIRED_FOR`    | Comma-separated client types requiring attestation (e.g. `mobile`).          | `mobile`                              |
 | `ATTESTATION_PROVIDER`        | Attestation provider id (`noop` scaffold by default).                        | `noop`                                |
+| `HIDE_ERROR_DESCRIPTION`      | If `true`, token endpoint hides error descriptions (security).                | `false`                               |
 
 
 ## Getting Started
@@ -159,7 +214,6 @@ The Time-To-Live (TTL) for a token is resolved with the following priority:
 
 -   **`POST /sso/token`**: Generates and returns a new JWT for a validated client.
 -   **`GET /.well-known/jwks.json`**: Returns the JSON Web Key Set (JWKS). CORS enabled for public access (e.g. jwt.io).
--   **`GET /.well-known/openid-configuration`**: OIDC Discovery endpoint – allows tools like jwt.io to automatically find the public key.
 -   **`GET /healthz`**: Liveness probe – always returns `200 ok`.
 -   **`GET /readyz`**: Readiness probe – returns `200 ready` when the signing key is loaded, `503` otherwise.
 
@@ -171,7 +225,7 @@ The project includes comprehensive unit tests covering:
 - **45+ tests** covering:
   - Configuration loading and precedence
   - Token generation and validation
-  - JWKS endpoint and OIDC Discovery
+  - JWKS endpoint
   - Health (`/healthz`) and readiness (`/readyz`) probes
   - Request logging with probe filtering
   - Device ID handling for mobile clients
@@ -188,12 +242,11 @@ make test
 # Run tests with coverage report
 make test-coverage
 
-# Run specific test
+# Run one specific test
 go test -v -run TestTokenHandler_SuccessfulMobileToken
 ```
 
 ### Test Details
-- **Race detector**: Enabled via `-race` flag for concurrent operation safety
 - **Request logger tests**: Verify that health probes are properly filtered from logs
 - **CORS tests**: Confirm that jwt.io can fetch public keys automatically
 - **Key management tests**: Cover ECDSA key loading, PKCS#8 format, and concurrent access
@@ -203,16 +256,15 @@ See [TESTING.md](TESTING.md) for detailed testing documentation.
 
 ## App Attestation
 
-Ghost-IDP includes an attestation scaffold that can verify that token requests originate from genuine, unmodified app installs before issuing a JWT.
+Ghost-IDP includes an attestation scaffold that validates the `device_id` form value before issuing a JWT.
 
 ### Ablaufdiagramme
 
-- `hmac` provider: `doc/hmac.mermaid`
 - `noop` provider: `doc/noop.mermaid`
 
 ### How It Works
 
-1. The mobile client sends a device identifier / attestation payload via the `X-Device-Id` header.
+1. The mobile client sends a device identifier / attestation payload via the `device_id` form parameter.
 2. Ghost-IDP extracts the value and passes it to the configured `AttestationProvider`.
 3. If the provider accepts the token, the JWT will contain extra claims:
    - `attested: true`
@@ -221,53 +273,40 @@ Ghost-IDP includes an attestation scaffold that can verify that token requests o
 
 ### Enabling Attestation
 
-Current checked-in state (`config.yaml`):
-
 ```yaml
 attestation:
   enabled: false
   requiredFor:
     - mobile
-  headerName: X-Device-Id
-  provider: hmac
-  maxAgeSeconds: 15
+  provider: noop
 ```
 
-To enforce HMAC attestation in runtime, set `enabled: true`:
+To enforce attestation in runtime, set `enabled: true`:
 
 ```yaml
 attestation:
   enabled: true
   requiredFor:
     - mobile
-  headerName: X-Device-Id
-  provider: hmac
-  maxAgeSeconds: 15
+  provider: noop
 
 clients:
   mobile:
     - name: your-mobile-client
       config: dev
-      hmacSecret: your-strong-shared-secret
 ```
-
-When `provider: hmac` is active, the following headers are required for mobile requests:
-- `X-Device-Id`
-- `X-Timestamp` (unix seconds)
-- `X-Signature` (hex HMAC-SHA256 of `X-Device-Id + X-Timestamp`)
 
 Or via environment variables:
 
 ```bash
 ATTESTATION_ENABLED=true
 ATTESTATION_REQUIRED_FOR=mobile
-ATTESTATION_PROVIDER=hmac
-ATTESTATION_MAX_AGE_SECONDS=15
+ATTESTATION_PROVIDER=noop
 ```
 
 ### Adding a Custom Provider
 
-All attestation logic lives in `attestation.go`. A built-in HMAC provider is implemented in `attestation_hmac.go`.
+All attestation logic lives in `attestation.go`.
 
 To add another provider:
 

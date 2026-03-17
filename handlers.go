@@ -3,7 +3,9 @@ package main
 import (
 	"crypto/ecdsa"
 	crand "crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +17,13 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 )
+
+// generateJTI creates a unique JWT ID (jti claim) using client_id and timestamp
+func generateJTI(clientID string, t time.Time) string {
+	hash := sha256.New()
+	hash.Write([]byte(clientID + t.String()))
+	return "jti_" + hex.EncodeToString(hash.Sum(nil))[:20]
+}
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
@@ -167,33 +176,33 @@ func tokenRequestDelayDuration(cfg TokenRequestDelayConfig) time.Duration {
 func tokenHandler(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		appLogger.Error("Failed to parse form data: %v", err)
-		writeJSONError(w, http.StatusBadRequest, "Bad Request")
+		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "failed to parse form body", appConfig.HideErrorDescription)
 		return
 	}
 
 	clientID := r.FormValue("client_id")
 	if clientID == "" {
 		appLogger.Warn("Token request missing 'client_id' parameter in form data.")
-		writeJSONError(w, http.StatusBadRequest, "client_id is required")
+		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "client_id is required", appConfig.HideErrorDescription)
 		return
 	}
 
 	grantType := r.FormValue("grant_type")
 	if grantType == "" {
 		appLogger.Warn("Token request missing 'grant_type' parameter in form_data.")
-		writeJSONError(w, http.StatusBadRequest, "grant_type is required")
+		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "grant_type is required", appConfig.HideErrorDescription)
 		return
 	}
 	if grantType != "client_credentials" {
 		appLogger.Warn("Invalid grant_type provided: %s", grantType)
-		writeJSONError(w, http.StatusBadRequest, "unsupported_grant_type")
+		writeOAuthError(w, http.StatusBadRequest, "unsupported_grant_type", "grant_type must be client_credentials", appConfig.HideErrorDescription)
 		return
 	}
 
 	clientType, ok := clientLookupMap[clientID]
 	if !ok {
 		appLogger.Warn("Invalid client_id provided: %s", clientID)
-		writeJSONError(w, http.StatusForbidden, "Invalid client_id")
+		writeOAuthError(w, http.StatusUnauthorized, "invalid_client", "client authentication failed", appConfig.HideErrorDescription)
 		return
 	}
 
@@ -202,7 +211,7 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 		deviceID = strings.TrimSpace(r.FormValue("device_id"))
 		if deviceID == "" {
 			appLogger.Warn("Token request from mobile client '%s' missing 'device_id' form parameter.", clientID)
-			writeJSONError(w, http.StatusBadRequest, "device_id form parameter is required for mobile clients")
+			writeOAuthError(w, http.StatusBadRequest, "invalid_request", "device_id is required", appConfig.HideErrorDescription)
 			return
 		}
 		appLogger.Info("Processing token request for mobile client: %s with device ID: %s", clientID, deviceID)
@@ -211,20 +220,20 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
 		if origin == "" {
 			appLogger.Warn("Token request from web client '%s' missing 'Origin' header.", clientID)
-			writeJSONError(w, http.StatusBadRequest, "Origin header is required for web clients")
+			writeOAuthError(w, http.StatusBadRequest, "invalid_request", "Origin header is required for web clients", appConfig.HideErrorDescription)
 			return
 		}
 
 		allowedOrigins, originsFound := originLookupMap[clientID]
 		if !originsFound || len(allowedOrigins) == 0 {
 			appLogger.Warn("No allowed origins configured for web client '%s'. Denying request from origin '%s'.", clientID, origin)
-			writeJSONError(w, http.StatusForbidden, "Client not configured for origin validation")
+			writeOAuthError(w, http.StatusForbidden, "invalid_client", "client not configured for origin validation", appConfig.HideErrorDescription)
 			return
 		}
 
 		if !isOriginAllowed(origin, allowedOrigins) {
 			appLogger.Warn("Origin '%s' not allowed for client '%s'. Allowed: %v", origin, clientID, allowedOrigins)
-			writeJSONError(w, http.StatusForbidden, "Origin not allowed")
+			writeOAuthError(w, http.StatusForbidden, "invalid_client", "origin not allowed", appConfig.HideErrorDescription)
 			return
 		}
 		appLogger.Info("Origin '%s' validated successfully for client '%s'.", origin, clientID)
@@ -232,14 +241,19 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 
 	attestationResult, err := verifyRequestAttestation(r, clientID, clientType)
 	if err != nil {
-		status := http.StatusForbidden
+		status := http.StatusBadRequest
+		code := "invalid_request"
 		if errors.Is(err, ErrAttestationMissing) {
 			status = http.StatusBadRequest
+			code = "invalid_request"
+		} else {
+			code = "invalid_grant"
 		}
 		appLogger.Warn("Attestation failed for client '%s': %v", clientID, err)
-		writeJSONError(w, status, err.Error())
+		writeOAuthError(w, status, code, err.Error(), appConfig.HideErrorDescription)
 		return
 	}
+	_ = attestationResult
 
 	if delay := tokenRequestDelayDuration(appConfig.Token.TokenRequestDelay); delay > 0 {
 		time.Sleep(delay)
@@ -250,7 +264,7 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 
 	if currentKey == nil {
 		appLogger.Warn("Token request for client '%s' received, but signing key is not loaded.", clientID)
-		writeJSONError(w, http.StatusServiceUnavailable, "Identity Provider is starting up...")
+		writeOAuthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "service is temporarily unavailable", appConfig.HideErrorDescription)
 		return
 	}
 
@@ -265,26 +279,23 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 	if !ttlFound {
 		// Should never happen if initClientLookup ran correctly, but guard against config errors.
 		appLogger.Error("TTL not found for client '%s'. This indicates a configuration error.", clientID)
-		writeJSONError(w, http.StatusInternalServerError, "Internal Server Error")
+		writeOAuthError(w, http.StatusInternalServerError, "server_error", "internal server error", appConfig.HideErrorDescription)
 		return
 	}
 
+	now := time.Now()
 	claims := jwt.MapClaims{
 		"iss":       formatHost(appConfig.PublicHost),
-		"sub":       "anon-" + time.Now().Format("20060102150405"),
+		"sub":       "anon-" + now.Format("20060102150405"),
 		"role":      "guest",
 		"aud":       audience,
 		"client_id": clientID,
-		"exp":       time.Now().Add(tokenTTL).Unix(),
+		"iat":       now.Unix(),
+		"exp":       now.Add(tokenTTL).Unix(),
+		"jti":       generateJTI(clientID, now),
 	}
 	if deviceID != "" {
 		claims["device_id"] = deviceID
-	}
-	if attestationResult != nil {
-		claims["attested"] = true
-		if attestationResult.Level != "" {
-			claims["attestation_level"] = attestationResult.Level
-		}
 	}
 
 	if clientIP := extractClientIP(r); clientIP != "" {
@@ -300,7 +311,7 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 	tokenString, err := token.SignedString(currentKey.key)
 	if err != nil {
 		appLogger.Error("Failed to sign token for client '%s': %v", clientID, err)
-		writeJSONError(w, http.StatusInternalServerError, "Internal Server Error")
+		writeOAuthError(w, http.StatusInternalServerError, "server_error", "internal server error", appConfig.HideErrorDescription)
 		return
 	}
 
@@ -324,6 +335,8 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		appLogger.Error("Failed to encode token response for client '%s': %v", clientID, err)
 	}
