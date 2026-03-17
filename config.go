@@ -15,7 +15,6 @@ type Client struct {
 	Name           string   `yaml:"name"`
 	Config         string   `yaml:"config,omitempty"`
 	AllowedOrigins []string `yaml:"allowedOrigins,omitempty"`
-	HMACSecret     string   `yaml:"hmacSecret,omitempty"`
 }
 
 // TokenProfile defines a set of token properties like TTL and audience.
@@ -38,11 +37,9 @@ type Clients struct {
 
 // AttestationConfig holds the configuration for attestation options.
 type AttestationConfig struct {
-	Enabled       bool     `yaml:"enabled"`
-	RequiredFor   []string `yaml:"requiredFor"`
-	HeaderName    string   `yaml:"headerName"`
-	Provider      string   `yaml:"provider"`
-	MaxAgeSeconds int      `yaml:"maxAgeSeconds"`
+	Enabled     bool     `yaml:"enabled"`
+	RequiredFor []string `yaml:"requiredFor"`
+	Provider    string   `yaml:"provider"`
 }
 
 // AppConfig holds the entire application configuration.
@@ -60,13 +57,11 @@ const (
 )
 
 var (
-	// ...existing code...
-	appConfig           AppConfig
-	clientLookupMap     map[string]string
-	originLookupMap     map[string][]string
-	audienceLookupMap   map[string][]string
-	ttlLookupMap        map[string]time.Duration
-	hmacSecretLookupMap map[string]string
+	appConfig         AppConfig
+	clientLookupMap   map[string]string
+	originLookupMap   map[string][]string
+	audienceLookupMap map[string][]string
+	ttlLookupMap      map[string]time.Duration
 )
 
 func initClientLookup() {
@@ -74,7 +69,6 @@ func initClientLookup() {
 	originLookupMap = make(map[string][]string)
 	audienceLookupMap = make(map[string][]string)
 	ttlLookupMap = make(map[string]time.Duration)
-	hmacSecretLookupMap = make(map[string]string)
 
 	globalTTL, err := parseDuration(appConfig.Token.TTL)
 	if err != nil {
@@ -92,9 +86,6 @@ func registerClients(clients []Client, clientType string, globalTTL time.Duratio
 		clientLookupMap[client.Name] = clientType
 		if clientType == clientTypeWeb {
 			originLookupMap[client.Name] = client.AllowedOrigins
-		}
-		if clientType == clientTypeMobile && strings.TrimSpace(client.HMACSecret) != "" {
-			hmacSecretLookupMap[client.Name] = strings.TrimSpace(client.HMACSecret)
 		}
 
 		ttlLookupMap[client.Name] = globalTTL
@@ -130,9 +121,7 @@ func LoadConfig(configPath string) error {
 	appConfig.Token.TTL = "2h"
 	appConfig.Attestation.Enabled = false
 	appConfig.Attestation.RequiredFor = []string{"mobile"}
-	appConfig.Attestation.HeaderName = "X-Device-Id"
 	appConfig.Attestation.Provider = "noop"
-	appConfig.Attestation.MaxAgeSeconds = 60
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -181,19 +170,8 @@ func applyEnvOverrides() {
 		}
 		appConfig.Attestation.RequiredFor = resolved
 	}
-	if headerName, ok := os.LookupEnv("ATTESTATION_HEADER"); ok && strings.TrimSpace(headerName) != "" {
-		appConfig.Attestation.HeaderName = strings.TrimSpace(headerName)
-	}
 	if provider, ok := os.LookupEnv("ATTESTATION_PROVIDER"); ok && strings.TrimSpace(provider) != "" {
 		appConfig.Attestation.Provider = strings.TrimSpace(provider)
-	}
-	if maxAge, ok := os.LookupEnv("ATTESTATION_MAX_AGE_SECONDS"); ok {
-		parsed, err := strconv.Atoi(strings.TrimSpace(maxAge))
-		if err != nil || parsed <= 0 {
-			appLogger.Warn("Invalid ATTESTATION_MAX_AGE_SECONDS value '%s'. Keeping current value: %d", maxAge, appConfig.Attestation.MaxAgeSeconds)
-		} else {
-			appConfig.Attestation.MaxAgeSeconds = parsed
-		}
 	}
 
 	for profileName, profile := range appConfig.Token.Config {

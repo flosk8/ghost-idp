@@ -37,7 +37,7 @@ func main() {
 	r.Get("/readyz", readyHandler)
 	r.Get("/.well-known/jwks.json", jwksHandler)
 	r.Options("/.well-known/jwks.json", jwksHandler)
-	r.Post("/token", tokenHandler)
+	r.Post("/sso/token", tokenHandler)
 
 	appLogger.Info("Ghost-IdP (ECDSA) running on port 8080...")
 	appLogger.Fatal("%v", http.ListenAndServe(":8080", r))

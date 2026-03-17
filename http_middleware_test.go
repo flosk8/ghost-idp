@@ -26,31 +26,31 @@ func TestIsProbeRequest(t *testing.T) {
 		},
 		{
 			name:      "kube-probe user agent lowercase",
-			path:      "/token",
+			path:      "/sso/token",
 			userAgent: "kube-probe/1.24",
 			expected:  true,
 		},
 		{
 			name:      "kube-probe user agent in string",
-			path:      "/token",
+			path:      "/sso/token",
 			userAgent: "kubelet/v1.24 (kube-probe) some-other-info",
 			expected:  true,
 		},
 		{
 			name:     "X-Probe: true header",
-			path:     "/token",
+			path:     "/sso/token",
 			xProbe:   "true",
 			expected: true,
 		},
 		{
 			name:     "X-Probe: True header (case insensitive)",
-			path:     "/token",
+			path:     "/sso/token",
 			xProbe:   "True",
 			expected: true,
 		},
 		{
 			name:     "normal request to /token",
-			path:     "/token",
+			path:     "/sso/token",
 			expected: false,
 		},
 		{
@@ -60,7 +60,7 @@ func TestIsProbeRequest(t *testing.T) {
 		},
 		{
 			name:      "normal request with random user agent",
-			path:      "/token",
+			path:      "/sso/token",
 			userAgent: "curl/7.68.0",
 			expected:  false,
 		},
@@ -90,7 +90,7 @@ func TestRequestLoggerSkippingProbes(t *testing.T) {
 	appLogger = &TextLogger{}
 
 	t.Run("logs normal request", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/token", nil)
+		req := httptest.NewRequest(http.MethodPost, "/sso/token", nil)
 		w := httptest.NewRecorder()
 
 		middleware := requestLoggerSkippingProbes(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +182,7 @@ func TestRequestLoggerSkippingProbes(t *testing.T) {
 	})
 
 	t.Run("default status is 200 if not set", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/token", nil)
+		req := httptest.NewRequest(http.MethodGet, "/sso/token", nil)
 		w := httptest.NewRecorder()
 
 		middleware := requestLoggerSkippingProbes(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +207,7 @@ func TestRequestLoggerWithDifferentMethods(t *testing.T) {
 
 	for _, method := range methods {
 		t.Run("logs "+method+" request", func(t *testing.T) {
-			req := httptest.NewRequest(method, "/token", nil)
+			req := httptest.NewRequest(method, "/sso/token", nil)
 			w := httptest.NewRecorder()
 
 			middleware := requestLoggerSkippingProbes(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

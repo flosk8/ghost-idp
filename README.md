@@ -11,45 +11,30 @@ A lightweight, standalone Identity Provider for generating anonymous JWTs using 
 -   **Advanced Configuration**:
     -   **Client Whitelisting**: Restricts token issuance to a predefined list of clients.
     -   **Configuration Profiles**: Define token profiles (`dev`, `prod`) with specific TTLs and audiences.
-    -   **Origin Validation**: Validates the `Origin` header for web clients.
--   **Rich JWT Claims**: Includes `client_id`, `client_ip`, `device_id` (for mobile), and a configurable `aud` (audience) claim.
+-   **Rich JWT Claims**: Includes `client_id`, `client_ip`, `device_id`, and a configurable `aud` (audience) claim.
 
 ## How it Works
 
-To receive a token, a client must send a `POST` request to the `/token` endpoint with an `x-www-form-urlencoded` body.
+To receive a token, a client must send a `POST` request to the `/sso/token` endpoint with an `x-www-form-urlencoded` body.
 
 ### Request Parameters
 
 | Parameter         | Required | Description                                                                 |
 |-------------------|----------|-----------------------------------------------------------------------------|
 | `grant_type`      | Yes      | Must be set to `client_credentials`.                                        |
-| `client_id`       | Yes      | The unique identifier of the client as defined in `config.yaml`.            |
-| `X-Device-Id`     | **Mobile Only** | HTTP header with a device identifier. Required for all mobile client token requests. Becomes the `device_id` claim in the JWT. |
+| `client_id`       | Yes      | The unique identifier of the mobile client as defined in `config.yaml`.     |
+| `device_id`       | Yes      | Form parameter with a device identifier. Required for all mobile client token requests. Becomes the `device_id` claim in the JWT. |
 
 ### Example Request
 
 ```bash
-# Mobile client with X-Device-Id header
-curl -X POST http://localhost:8080/token \
+# Mobile client with device_id form parameter
+curl -X POST http://localhost:8080/sso/token \
      -H "Content-Type: application/x-www-form-urlencoded" \
-     -H "X-Device-Id: my-device-identifier" \
-     -d "grant_type=client_credentials&client_id=your-mobile-client"
-
-# Web client (no device identifier needed)
-curl -X POST http://localhost:8080/token \
-     -H "Content-Type: application/x-www-form-urlencoded" \
-     -H "Origin: https://my-web-app.com" \
-     -d "grant_type=client_credentials&client_id=your-web-client"
+     -d "grant_type=client_credentials&client_id=kompass-mobile-dev&device_id=my-device-identifier"
 ```
 
-The IDP validates the `client_id` and its associated configuration:
--   **Web Clients**:
-    -   Validates the `Origin` header against `allowedOrigins`.
-    -   Receives a `Set-Cookie` header with the JWT for easy browser integration.
--   **Mobile Clients**:
-    -   Must provide the `X-Device-Id` header.
-    -   The header value becomes the `device_id` claim in the JWT.
-    -   Do not receive a cookie and are expected to use the `access_token` from the JSON response body.
+The IDP validates the `client_id` and its associated configuration, then generates a JWT token with the provided `device_id` claim.
 
 ## Configuration
 
@@ -93,23 +78,11 @@ token:
 
 # Client definitions
 clients:
-  web:
-    - name: "atlas-dev"
-      config: "dev"       # References the 'dev' profile from token.config
-      allowedOrigins:
-        - "*"             # Allow all origins (use with caution)
-    - name: "brde-dev"
-      config: "dev"
-      allowedOrigins:
-        - "https://br.de"
-        - "https://br.dev.de"
   mobile:
-    - name: "br24-dev"
+    - name: "kompass-mobile-dev"
       config: "dev"
-      hmacSecret: "dev-secret-change-me"
-    - name: "br24-prod"
+    - name: "kompass-mobile-prod"
       config: "prod"
-      hmacSecret: "prod-secret-change-me"
 ```
 
 ### Configuration Precedence
@@ -140,10 +113,8 @@ The Time-To-Live (TTL) for a token is resolved with the following priority:
 | `TOKEN_TTL`                   | Overrides the **global** default token TTL (e.g., `30d`, `12h`).             | `token.ttl` from `config.yaml`        |
 | `TOKEN_CONFIG_<PROFILE>_TTL`  | Overrides the TTL for a **specific profile** (e.g., `TOKEN_CONFIG_PROD_TTL=1h`). | `ttl` from the profile in `config.yaml` |
 | `ATTESTATION_ENABLED`         | Enables request-time attestation validation.                                 | `false`                               |
-| `ATTESTATION_REQUIRED_FOR`    | Comma-separated client types requiring attestation (e.g. `mobile,web`).     | `mobile`                              |
-| `ATTESTATION_HEADER`          | Header used to read attestation data.                                        | `X-Device-Id`                         |
+| `ATTESTATION_REQUIRED_FOR`    | Comma-separated client types requiring attestation (e.g. `mobile`).          | `mobile`                              |
 | `ATTESTATION_PROVIDER`        | Attestation provider id (`noop` scaffold by default).                        | `noop`                                |
-| `ATTESTATION_MAX_AGE_SECONDS` | Maximum allowed age of `X-Timestamp` in seconds for `hmac` provider.         | `60`                                  |
 
 
 ## Getting Started
@@ -180,7 +151,7 @@ The Time-To-Live (TTL) for a token is resolved with the following priority:
 
 ## Endpoints
 
--   **`POST /token`**: Generates and returns a new JWT for a validated client.
+-   **`POST /sso/token`**: Generates and returns a new JWT for a validated client.
 -   **`GET /.well-known/jwks.json`**: Returns the JSON Web Key Set (JWKS). CORS enabled for public access (e.g. jwt.io).
 -   **`GET /.well-known/openid-configuration`**: OIDC Discovery endpoint – allows tools like jwt.io to automatically find the public key.
 -   **`GET /healthz`**: Liveness probe – always returns `200 ok`.
@@ -193,11 +164,10 @@ The project includes comprehensive unit tests covering:
 ### Test Coverage
 - **45+ tests** covering:
   - Configuration loading and precedence
-  - Token generation and validation (web and mobile clients)
+  - Token generation and validation
   - JWKS endpoint and OIDC Discovery
   - Health (`/healthz`) and readiness (`/readyz`) probes
   - Request logging with probe filtering
-  - Origin validation for web clients
   - Device ID handling for mobile clients
   - CORS header validation
   - Key management and rotation

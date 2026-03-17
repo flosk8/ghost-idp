@@ -167,14 +167,8 @@ func TestLoadConfig(t *testing.T) {
 		if appConfig.Attestation.Enabled {
 			t.Error("Expected attestation to be disabled by default")
 		}
-		if appConfig.Attestation.HeaderName != "X-Device-Id" {
-			t.Errorf("Expected default attestation header, got: %s", appConfig.Attestation.HeaderName)
-		}
 		if appConfig.Attestation.Provider != "noop" {
 			t.Errorf("Expected default attestation provider noop, got: %s", appConfig.Attestation.Provider)
-		}
-		if appConfig.Attestation.MaxAgeSeconds != 60 {
-			t.Errorf("Expected default attestation max age 60, got: %d", appConfig.Attestation.MaxAgeSeconds)
 		}
 	})
 
@@ -237,14 +231,8 @@ func TestLoadConfig(t *testing.T) {
 		if len(appConfig.Attestation.RequiredFor) != 2 {
 			t.Errorf("Expected 2 requiredFor entries, got: %d", len(appConfig.Attestation.RequiredFor))
 		}
-		if appConfig.Attestation.HeaderName != "X-Attestation" {
-			t.Errorf("Expected attestation header from env var, got: %s", appConfig.Attestation.HeaderName)
-		}
 		if appConfig.Attestation.Provider != "stub" {
 			t.Errorf("Expected attestation provider from env var, got: %s", appConfig.Attestation.Provider)
-		}
-		if appConfig.Attestation.MaxAgeSeconds != 120 {
-			t.Errorf("Expected attestation max age from env var, got: %d", appConfig.Attestation.MaxAgeSeconds)
 		}
 	})
 }
@@ -280,9 +268,8 @@ func TestInitClientLookup(t *testing.T) {
 			},
 			Mobile: []Client{
 				{
-					Name:       "mobile-client-1",
-					Config:     "prod",
-					HMACSecret: "super-secret",
+					Name:   "mobile-client-1",
+					Config: "prod",
 				},
 			},
 		},
@@ -334,16 +321,6 @@ func TestInitClientLookup(t *testing.T) {
 		}
 		if ttl != 4*time.Hour {
 			t.Errorf("Expected TTL 4h, got: %v", ttl)
-		}
-	})
-
-	t.Run("hmac secret lookup map", func(t *testing.T) {
-		secret, exists := hmacSecretLookupMap["mobile-client-1"]
-		if !exists {
-			t.Error("Expected mobile-client-1 to have hmac secret")
-		}
-		if secret != "super-secret" {
-			t.Errorf("Expected hmac secret super-secret, got: %s", secret)
 		}
 	})
 

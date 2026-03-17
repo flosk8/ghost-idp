@@ -1,13 +1,11 @@
-publicHost: https://auth.example.com
+publicHost: https://localhost:8080
 keyPath: /etc/ghost-idp/certs/tls.key
 
 attestation:
   enabled: false
   requiredFor:
     - mobile
-  headerName: X-Device-Id
-  provider: hmac
-  maxAgeSeconds: 15
+  provider: noop
 
 token:
   ttl: 2h
@@ -15,31 +13,22 @@ token:
     dev:
       ttl: 3h
       audience:
-        - https://api.dev.kompass.gg
-        - https://dashboard.dev.kompass.gg
+        - env-dev
+        - env-qa
     prod:
       ttl: 2h
       audience:
-        - https://api.kompass.gg
-        - https://dashboard.kompass.gg
+        - env-prod
 
 clients:
   web:
     - name: kompass-web-dev
       config: dev
       allowedOrigins:
-        - "http://localhost:3000"
-        - "https://dev.kompass.gg"
-    - name: kompass-web-prod
-      config: prod
-      allowedOrigins:
-        - "https://kompass.gg"
-        - "https://www.kompass.gg"
+        - "*"
 
   mobile:
     - name: kompass-mobile-dev
       config: dev
-      hmacSecret: dev-secret-change-me
     - name: kompass-mobile-prod
       config: prod
-      hmacSecret: prod-secret-change-me

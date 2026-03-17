@@ -168,11 +168,10 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 
 	var deviceID string
 	if clientType == clientTypeMobile {
-		deviceIDHeader := attestationHeaderName()
-		deviceID = strings.TrimSpace(r.Header.Get(deviceIDHeader))
+		deviceID = strings.TrimSpace(r.FormValue("device_id"))
 		if deviceID == "" {
-			appLogger.Warn("Token request from mobile client '%s' missing '%s' header.", clientID, deviceIDHeader)
-			writeJSONError(w, http.StatusBadRequest, deviceIDHeader+" header is required for mobile clients")
+			appLogger.Warn("Token request from mobile client '%s' missing 'device_id' form parameter.", clientID)
+			writeJSONError(w, http.StatusBadRequest, "device_id form parameter is required for mobile clients")
 			return
 		}
 		appLogger.Info("Processing token request for mobile client: %s with device ID: %s", clientID, deviceID)

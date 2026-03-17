@@ -118,7 +118,7 @@ func TestTokenHandler_MissingClientID(t *testing.T) {
 	form := url.Values{}
 	form.Set("grant_type", "client_credentials")
 
-	req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/sso/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 
@@ -142,7 +142,7 @@ func TestTokenHandler_MissingGrantType(t *testing.T) {
 	form := url.Values{}
 	form.Set("client_id", "test-client")
 
-	req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/sso/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 
@@ -167,7 +167,7 @@ func TestTokenHandler_InvalidGrantType(t *testing.T) {
 	form.Set("client_id", "test-client")
 	form.Set("grant_type", "invalid_grant")
 
-	req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/sso/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 
@@ -195,7 +195,7 @@ func TestTokenHandler_InvalidClient(t *testing.T) {
 	form.Set("client_id", "invalid-client")
 	form.Set("grant_type", "client_credentials")
 
-	req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/sso/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 
@@ -224,9 +224,8 @@ func TestTokenHandler_MobileWithoutDeviceIDHeader(t *testing.T) {
 	form := url.Values{}
 	form.Set("client_id", "mobile-test")
 	form.Set("grant_type", "client_credentials")
-	// No X-Device-Id header
 
-	req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/sso/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 
@@ -237,7 +236,7 @@ func TestTokenHandler_MobileWithoutDeviceIDHeader(t *testing.T) {
 	}
 
 	body := w.Body.String()
-	if !strings.Contains(body, "X-Device-Id") {
+	if !strings.Contains(body, "device_id") {
 		t.Errorf("Expected error message about X-Device-Id header, got: %s", body)
 	}
 }
@@ -256,7 +255,7 @@ func TestTokenHandler_WebWithoutOrigin(t *testing.T) {
 	form.Set("client_id", "web-test")
 	form.Set("grant_type", "client_credentials")
 
-	req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/sso/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 
@@ -289,7 +288,7 @@ func TestTokenHandler_WebWithInvalidOrigin(t *testing.T) {
 	form.Set("client_id", "web-test")
 	form.Set("grant_type", "client_credentials")
 
-	req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/sso/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", "https://malicious.com")
 	w := httptest.NewRecorder()
@@ -336,7 +335,7 @@ func TestTokenHandler_WebWithWildcardOrigin(t *testing.T) {
 	form.Set("client_id", "web-test")
 	form.Set("grant_type", "client_credentials")
 
-	req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/sso/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", "https://any-origin.com")
 	w := httptest.NewRecorder()
@@ -386,10 +385,10 @@ func TestTokenHandler_SuccessfulMobileToken(t *testing.T) {
 	form := url.Values{}
 	form.Set("client_id", "mobile-test")
 	form.Set("grant_type", "client_credentials")
+	form.Set("device_id", "test-device-123")
 
-	req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/sso/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("X-Device-Id", "test-device-123")
 	w := httptest.NewRecorder()
 
 	tokenHandler(w, req)
@@ -556,7 +555,7 @@ func TestExtractClientIP(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/token", nil)
+			req := httptest.NewRequest(http.MethodGet, "/sso/token", nil)
 			req.RemoteAddr = tt.remoteAddr
 			if tt.xff != "" {
 				req.Header.Set("X-Forwarded-For", tt.xff)
@@ -591,10 +590,10 @@ func TestTokenHandler_UsesForwardedClientIP(t *testing.T) {
 	form := url.Values{}
 	form.Set("client_id", "mobile-test")
 	form.Set("grant_type", "client_credentials")
+	form.Set("device_id", "device-1")
 
-	req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/sso/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("X-Device-Id", "device-1")
 	req.Header.Set("X-Forwarded-For", "203.0.113.50, 10.0.0.3")
 	req.RemoteAddr = "10.0.0.3:45000"
 	w := httptest.NewRecorder()

@@ -26,23 +26,25 @@ func setupTokenHandlerBaseConfig() {
 	audienceLookupMap = map[string][]string{"mobile-test": {"mobile-aud"}, "web-test": {"web-aud"}}
 	ttlLookupMap = map[string]time.Duration{"mobile-test": time.Hour, "web-test": time.Hour}
 	appConfig.PublicHost = "http://localhost:8080"
-	appConfig.Attestation.HeaderName = "X-Device-Id"
 }
 
 func TestExtractAttestationToken(t *testing.T) {
-	appConfig.Attestation.HeaderName = "X-Device-Id"
+	t.Run("extracts device_id from form data", func(t *testing.T) {
+		form := url.Values{}
+		form.Set("device_id", "form-token")
+		req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	t.Run("extracts X-Device-Id header", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/token", nil)
-		req.Header.Set("X-Device-Id", "header-token")
-
-		if got := extractAttestationToken(req); got != "header-token" {
-			t.Fatalf("expected header token, got: %s", got)
+		if got := extractAttestationToken(req); got != "form-token" {
+			t.Fatalf("expected form token, got: %s", got)
 		}
 	})
 
-	t.Run("returns empty if header not provided", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/token", nil)
+	t.Run("returns empty if device_id not provided", func(t *testing.T) {
+		form := url.Values{}
+		req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
 		if got := extractAttestationToken(req); got != "" {
 			t.Fatalf("expected empty, got: %s", got)
 		}
@@ -71,10 +73,10 @@ func TestTokenHandler_AttestationEnforcement(t *testing.T) {
 		form := url.Values{}
 		form.Set("client_id", "mobile-test")
 		form.Set("grant_type", "client_credentials")
+		form.Set("device_id", "device-attestation-payload")
 
 		req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("X-Device-Id", "device-attestation-payload")
 		w := httptest.NewRecorder()
 
 		tokenHandler(w, req)
@@ -83,12 +85,11 @@ func TestTokenHandler_AttestationEnforcement(t *testing.T) {
 		}
 	})
 
-	t.Run("enabled attestation rejects missing device header", func(t *testing.T) {
+	t.Run("enabled attestation rejects missing device_id form parameter", func(t *testing.T) {
 		appConfig.Attestation.Enabled = true
 		appConfig.Attestation.RequiredFor = []string{"mobile"}
 		attestationProvider = NoopAttestationProvider{}
 
-		// No X-Device-Id header
 		form := url.Values{}
 		form.Set("client_id", "mobile-test")
 		form.Set("grant_type", "client_credentials")
@@ -103,7 +104,7 @@ func TestTokenHandler_AttestationEnforcement(t *testing.T) {
 		}
 	})
 
-	t.Run("enabled attestation rejects invalid device header token", func(t *testing.T) {
+	t.Run("enabled attestation rejects invalid device_id token", func(t *testing.T) {
 		appConfig.Attestation.Enabled = true
 		appConfig.Attestation.RequiredFor = []string{"mobile"}
 		attestationProvider = failingAttestationProvider{}
@@ -111,10 +112,10 @@ func TestTokenHandler_AttestationEnforcement(t *testing.T) {
 		form := url.Values{}
 		form.Set("client_id", "mobile-test")
 		form.Set("grant_type", "client_credentials")
+		form.Set("device_id", "bad-attestation-payload")
 
 		req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("X-Device-Id", "bad-attestation-payload")
 		w := httptest.NewRecorder()
 
 		tokenHandler(w, req)
@@ -123,19 +124,18 @@ func TestTokenHandler_AttestationEnforcement(t *testing.T) {
 		}
 	})
 
-	t.Run("enabled attestation adds attested claims using X-Device-Id header", func(t *testing.T) {
+	t.Run("enabled attestation adds attested claims using device_id form parameter", func(t *testing.T) {
 		appConfig.Attestation.Enabled = true
 		appConfig.Attestation.RequiredFor = []string{"mobile"}
 		attestationProvider = NoopAttestationProvider{}
 
-		// Mobile client sends X-Device-Id header — this is the attestation token
 		form := url.Values{}
 		form.Set("client_id", "mobile-test")
 		form.Set("grant_type", "client_credentials")
+		form.Set("device_id", "my-device-attestation-payload")
 
 		req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("X-Device-Id", "my-device-attestation-payload")
 		w := httptest.NewRecorder()
 
 		tokenHandler(w, req)
