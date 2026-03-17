@@ -9,6 +9,9 @@ attestation:
 
 token:
   ttl: 2h
+  tokenRequestDelay:
+    minMS: 500
+    maxMS: 1500
   config:
     dev:
       ttl: 3h

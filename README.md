@@ -64,6 +64,10 @@ attestation:
 token:
   # Global default TTL if not specified in a profile
   ttl: 2h
+  # Optional random delay before issuing a token (default: 0ms, no delay)
+  tokenRequestDelay:
+    minMS: 0
+    maxMS: 0
   # Reusable configuration profiles for tokens
   config:
     dev:
@@ -111,6 +115,8 @@ The Time-To-Live (TTL) for a token is resolved with the following priority:
 | `PUBLIC_HOST`                 | Public-facing host for the JWKS endpoint.                                   | `http://localhost:8080`               |
 | `LOG_FORMAT`                  | The format for application logs (`text` or `json`).                         | `text`                                |
 | `TOKEN_TTL`                   | Overrides the **global** default token TTL (e.g., `30d`, `12h`).             | `token.ttl` from `config.yaml`        |
+| `TOKEN_REQUEST_DELAY_MIN_MS`  | Overrides the minimum token response delay in milliseconds.                    | `0`                                   |
+| `TOKEN_REQUEST_DELAY_MAX_MS`  | Overrides the maximum token response delay in milliseconds.                    | `0`                                   |
 | `TOKEN_CONFIG_<PROFILE>_TTL`  | Overrides the TTL for a **specific profile** (e.g., `TOKEN_CONFIG_PROD_TTL=1h`). | `ttl` from the profile in `config.yaml` |
 | `ATTESTATION_ENABLED`         | Enables request-time attestation validation.                                 | `false`                               |
 | `ATTESTATION_REQUIRED_FOR`    | Comma-separated client types requiring attestation (e.g. `mobile`).          | `mobile`                              |

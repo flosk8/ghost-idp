@@ -23,10 +23,55 @@ type TokenProfile struct {
 	Audience []string `yaml:"audience"`
 }
 
+// TokenRequestDelayConfig defines the random delay window before issuing a token.
+type TokenRequestDelayConfig struct {
+	MinMS int `yaml:"minMS"`
+	MaxMS int `yaml:"maxMS"`
+}
+
+func (c *TokenRequestDelayConfig) UnmarshalYAML(value *yaml.Node) error {
+	type rawDelay struct {
+		MinMS *int `yaml:"minMS"`
+		MaxMS *int `yaml:"maxMS"`
+	}
+
+	switch value.Kind {
+	case yaml.MappingNode:
+		var raw rawDelay
+		if err := value.Decode(&raw); err != nil {
+			return err
+		}
+		if raw.MinMS != nil {
+			c.MinMS = *raw.MinMS
+		}
+		if raw.MaxMS != nil {
+			c.MaxMS = *raw.MaxMS
+		}
+		return nil
+	case yaml.SequenceNode:
+		for _, node := range value.Content {
+			var raw rawDelay
+			if err := node.Decode(&raw); err != nil {
+				return err
+			}
+			if raw.MinMS != nil {
+				c.MinMS = *raw.MinMS
+			}
+			if raw.MaxMS != nil {
+				c.MaxMS = *raw.MaxMS
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("tokenRequestDelay must be a mapping or sequence")
+	}
+}
+
 // TokenConfig holds the global TTL and the configuration profiles.
 type TokenConfig struct {
-	TTL    string                  `yaml:"ttl"`
-	Config map[string]TokenProfile `yaml:"config"`
+	TTL               string                  `yaml:"ttl"`
+	TokenRequestDelay TokenRequestDelayConfig `yaml:"tokenRequestDelay,omitempty"`
+	Config            map[string]TokenProfile `yaml:"config"`
 }
 
 // Clients groups web and mobile clients.
@@ -119,6 +164,8 @@ func LoadConfig(configPath string) error {
 	appConfig.KeyPath = "/etc/ghost-idp/certs/tls.key"
 	appConfig.PublicHost = "http://localhost:8080"
 	appConfig.Token.TTL = "2h"
+	appConfig.Token.TokenRequestDelay.MinMS = 0
+	appConfig.Token.TokenRequestDelay.MaxMS = 0
 	appConfig.Attestation.Enabled = false
 	appConfig.Attestation.RequiredFor = []string{"mobile"}
 	appConfig.Attestation.Provider = "noop"
@@ -138,6 +185,7 @@ func LoadConfig(configPath string) error {
 	}
 
 	applyEnvOverrides()
+	normalizeTokenRequestDelay()
 	return nil
 }
 
@@ -151,6 +199,22 @@ func applyEnvOverrides() {
 	if tokenTTL, ok := os.LookupEnv("TOKEN_TTL"); ok {
 		appConfig.Token.TTL = tokenTTL
 		appLogger.Info("Global token TTL overridden by TOKEN_TTL environment variable: %s", tokenTTL)
+	}
+	if minDelay, ok := os.LookupEnv("TOKEN_REQUEST_DELAY_MIN_MS"); ok {
+		parsed, err := strconv.Atoi(strings.TrimSpace(minDelay))
+		if err != nil {
+			appLogger.Warn("Invalid TOKEN_REQUEST_DELAY_MIN_MS value '%s'. Keeping current value: %d", minDelay, appConfig.Token.TokenRequestDelay.MinMS)
+		} else {
+			appConfig.Token.TokenRequestDelay.MinMS = parsed
+		}
+	}
+	if maxDelay, ok := os.LookupEnv("TOKEN_REQUEST_DELAY_MAX_MS"); ok {
+		parsed, err := strconv.Atoi(strings.TrimSpace(maxDelay))
+		if err != nil {
+			appLogger.Warn("Invalid TOKEN_REQUEST_DELAY_MAX_MS value '%s'. Keeping current value: %d", maxDelay, appConfig.Token.TokenRequestDelay.MaxMS)
+		} else {
+			appConfig.Token.TokenRequestDelay.MaxMS = parsed
+		}
 	}
 	if attestationEnabled, ok := os.LookupEnv("ATTESTATION_ENABLED"); ok {
 		if enabled, err := strconv.ParseBool(attestationEnabled); err == nil {
@@ -183,6 +247,21 @@ func applyEnvOverrides() {
 			appConfig.Token.Config[profileName] = mutableProfile
 			appLogger.Info("TTL for profile '%s' overridden by %s: %s", profileName, envVarName, profileTTL)
 		}
+	}
+}
+
+func normalizeTokenRequestDelay() {
+	if appConfig.Token.TokenRequestDelay.MinMS < 0 {
+		appLogger.Warn("tokenRequestDelay.minMS cannot be negative (%d). Using 0.", appConfig.Token.TokenRequestDelay.MinMS)
+		appConfig.Token.TokenRequestDelay.MinMS = 0
+	}
+	if appConfig.Token.TokenRequestDelay.MaxMS < 0 {
+		appLogger.Warn("tokenRequestDelay.maxMS cannot be negative (%d). Using 0.", appConfig.Token.TokenRequestDelay.MaxMS)
+		appConfig.Token.TokenRequestDelay.MaxMS = 0
+	}
+	if appConfig.Token.TokenRequestDelay.MinMS > appConfig.Token.TokenRequestDelay.MaxMS {
+		appLogger.Warn("tokenRequestDelay.minMS (%d) is greater than maxMS (%d). Swapping values.", appConfig.Token.TokenRequestDelay.MinMS, appConfig.Token.TokenRequestDelay.MaxMS)
+		appConfig.Token.TokenRequestDelay.MinMS, appConfig.Token.TokenRequestDelay.MaxMS = appConfig.Token.TokenRequestDelay.MaxMS, appConfig.Token.TokenRequestDelay.MinMS
 	}
 }
 

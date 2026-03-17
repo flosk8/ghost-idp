@@ -2,10 +2,12 @@ package main
 
 import (
 	"crypto/ecdsa"
+	crand "crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"net"
 	"net/http"
 	"strings"
@@ -133,6 +135,35 @@ func extractCookieDomain(host string) string {
 	return domain
 }
 
+func tokenRequestDelayDuration(cfg TokenRequestDelayConfig) time.Duration {
+	minMS := cfg.MinMS
+	maxMS := cfg.MaxMS
+
+	if minMS < 0 {
+		minMS = 0
+	}
+	if maxMS < 0 {
+		maxMS = 0
+	}
+	if minMS > maxMS {
+		minMS, maxMS = maxMS, minMS
+	}
+	if minMS == 0 && maxMS == 0 {
+		return 0
+	}
+	if minMS == maxMS {
+		return time.Duration(minMS) * time.Millisecond
+	}
+
+	span := maxMS - minMS + 1
+	randomIndex, err := crand.Int(crand.Reader, big.NewInt(int64(span)))
+	if err != nil {
+		return time.Duration(minMS) * time.Millisecond
+	}
+
+	return time.Duration(minMS+int(randomIndex.Int64())) * time.Millisecond
+}
+
 func tokenHandler(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		appLogger.Error("Failed to parse form data: %v", err)
@@ -208,6 +239,10 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 		appLogger.Warn("Attestation failed for client '%s': %v", clientID, err)
 		writeJSONError(w, status, err.Error())
 		return
+	}
+
+	if delay := tokenRequestDelayDuration(appConfig.Token.TokenRequestDelay); delay > 0 {
+		time.Sleep(delay)
 	}
 
 	keyMu.RLock()

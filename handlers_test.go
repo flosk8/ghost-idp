@@ -572,6 +572,31 @@ func TestExtractClientIP(t *testing.T) {
 	}
 }
 
+func TestTokenRequestDelayDuration(t *testing.T) {
+	t.Run("returns zero when both bounds are zero", func(t *testing.T) {
+		d := tokenRequestDelayDuration(TokenRequestDelayConfig{MinMS: 0, MaxMS: 0})
+		if d != 0 {
+			t.Fatalf("expected 0 delay, got: %v", d)
+		}
+	})
+
+	t.Run("returns fixed delay when min equals max", func(t *testing.T) {
+		d := tokenRequestDelayDuration(TokenRequestDelayConfig{MinMS: 250, MaxMS: 250})
+		if d != 250*time.Millisecond {
+			t.Fatalf("expected 250ms delay, got: %v", d)
+		}
+	})
+
+	t.Run("returns delay inside configured range", func(t *testing.T) {
+		for i := 0; i < 100; i++ {
+			d := tokenRequestDelayDuration(TokenRequestDelayConfig{MinMS: 10, MaxMS: 20})
+			if d < 10*time.Millisecond || d > 20*time.Millisecond {
+				t.Fatalf("expected delay between 10ms and 20ms, got: %v", d)
+			}
+		}
+	})
+}
+
 func TestTokenHandler_UsesForwardedClientIP(t *testing.T) {
 	originalLogger := appLogger
 	defer func() { appLogger = originalLogger }()
