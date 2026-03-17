@@ -299,7 +299,7 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	claims := jwt.MapClaims{
 		"iss":       formatHost(appConfig.PublicHost),
-		"sub":       "anon-" + now.Format("20060102150405"),
+		"sub":       deviceID,
 		"role":      "guest",
 		"aud":       audience,
 		"client_id": clientID,

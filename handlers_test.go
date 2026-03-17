@@ -861,16 +861,15 @@ func TestRFC7519RFC6749Compliance(t *testing.T) {
 
 	audienceLookupMap["rfc-test"] = []string{"test-audience"}
 	ttlLookupMap["rfc-test"] = 1 * time.Hour
-	clientLookupMap["rfc-test"] = clientTypeWeb
-	originLookupMap["rfc-test"] = []string{"https://example.com"}
+	clientLookupMap["rfc-test"] = clientTypeMobile
 
 	form := url.Values{
 		"client_id":  {"rfc-test"},
 		"grant_type": {"client_credentials"},
+		"device_id":  {"test-device-123"},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/sso/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Origin", "https://example.com")
 	req.RemoteAddr = "192.168.1.100:12345"
 
 	w := httptest.NewRecorder()
@@ -991,8 +990,8 @@ func TestRFC7519RFC6749Compliance(t *testing.T) {
 	if !ok {
 		t.Error("RFC 7519: 'sub' must be a string")
 	}
-	if !strings.HasPrefix(sub, "anon-") {
-		t.Errorf("RFC 7519: 'sub' should start with 'anon-', got: %s", sub)
+	if sub != "test-device-123" {
+		t.Errorf("RFC 7519: 'sub' should equal device_id (test-device-123), got: %s", sub)
 	}
 
 	// RFC 7519: Header validation

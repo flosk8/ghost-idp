@@ -62,7 +62,7 @@ The generated JWT includes the following claims:
 | Claim        | Type     | Description                                                                                |
 |--------------|----------|--------------------------------------------------------------------------------------------|
 | `iss`        | string   | Issuer – the public host of the Ghost-IDP server.                                          |
-| `sub`        | string   | Subject – an anonymous identifier composed of "anon-" + YYYYMMDDHHMMSS timestamp.          |
+| `sub`        | string   | Subject – the device identifier (uniquely identifies the subject of the JWT).              |
 | `aud`        | array    | Audience – list of intended audiences (from config or defaults to client_id).              |
 | `client_id`  | string   | The client identifier that requested the token.                                            |
 | `client_ip`  | string   | The client's IP address (extracted from request headers or RemoteAddr).                    |
