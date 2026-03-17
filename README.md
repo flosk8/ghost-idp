@@ -87,6 +87,82 @@ Common error codes:
 - `temporarily_unavailable` (signing key not ready)
 - `server_error` (unexpected internal error)
 
+## RFC Compliance
+
+Ghost-IDP implements comprehensive RFC standards for security and interoperability:
+
+### RFC 7519: JSON Web Token (JWT)
+
+**Implemented Claims:**
+- `iss` (Issuer) – Identifies the principal that issued the JWT
+- `sub` (Subject) – Identifies the principal that is the subject of the JWT
+- `aud` (Audience) – Identifies the recipients that the JWT is intended for
+- **`iat` (Issued At)** – Time at which the JWT was issued (Unix timestamp)
+- **`exp` (Expiration Time)** – Time on which the JWT expires (Unix timestamp)
+- **`jti` (JWT ID)** – Unique identifier for the JWT (prevents replay attacks)
+
+**Header Claims:**
+- `alg` (Algorithm) – ES256 (ECDSA with SHA-256)
+- `kid` (Key ID) – References the signing key in JWKS
+- `jku` (JWKS URL) – Points to the `/.well-known/jwks.json` endpoint
+
+**Unique JTI Format:**
+- Format: `jti_<20-character-SHA256-hash>`
+- Deterministic per client and timestamp
+- Suitable for replay attack detection and token tracking
+
+### RFC 6749: OAuth 2.0 Authorization Framework
+
+**Token Endpoint (`POST /sso/token`):**
+- Implements `client_credentials` grant type
+- Response includes: `access_token`, `token_type` (Bearer), `expires_in` (seconds), `scope`
+- Cache-Control and Pragma headers prevent caching of sensitive responses
+
+**Error Response Headers:**
+- `Cache-Control: no-store` – Prevents caching
+- `Pragma: no-cache` – Legacy cache prevention
+- `Content-Type: application/json;charset=UTF-8` – Proper content type
+- `WWW-Authenticate: Bearer error="invalid_client"` – For 401 responses (RFC 2617)
+
+**Error Codes:**
+All error responses follow RFC 6749 Appendix B.1.3:
+- `400 Bad Request` – `invalid_request`, `unsupported_grant_type`
+- `401 Unauthorized` – `invalid_client`
+- `403 Forbidden` – Invalid origin (custom extension)
+- `500 Internal Server Error` – `server_error`
+- `503 Service Unavailable` – `temporarily_unavailable`
+
+### RFC 7231: HTTP Semantics
+
+Proper HTTP status codes:
+- `200 OK` – Token successfully issued
+- `400 Bad Request` – Invalid parameters
+- `401 Unauthorized` – Authentication failed
+- `403 Forbidden` – Authorization failed
+- `500 Internal Server Error` – Server error
+- `503 Service Unavailable` – Service temporarily unavailable
+
+### RFC 7234: HTTP Caching
+
+All sensitive responses include:
+- `Cache-Control: no-store` – Must not be cached
+- `Pragma: no-cache` – Legacy cache prevention
+
+### RFC 3339: Date Format
+
+Unix timestamps (seconds since epoch) for JWT claims (`iat`, `exp`).
+
+### RFC 2617 / RFC 7235: HTTP Authentication
+
+- `WWW-Authenticate` header for `invalid_client` errors
+- Proper Bearer token format in Authorization header
+
+**Test Coverage:**
+- `TestRFC7519RFC6749Compliance` – Validates all RFC requirements
+- `TestOAuth2ErrorResponseFormat` – Validates error response format
+- `TestOAuth2InvalidClientAuthentication` – Validates authentication errors
+- See [TESTING.md](TESTING.md) for full test coverage
+
 Token endpoint responses include:
 
 - `Cache-Control: no-store`
@@ -214,6 +290,7 @@ The Time-To-Live (TTL) for a token is resolved with the following priority:
 
 -   **`POST /sso/token`**: Generates and returns a new JWT for a validated client.
 -   **`GET /.well-known/jwks.json`**: Returns the JSON Web Key Set (JWKS). CORS enabled for public access (e.g. jwt.io).
+-   **`GET /.well-known/oauth-authorization-server`**: Returns OAuth 2.0 Authorization Server Metadata (RFC 8414) for automatic client discovery.
 -   **`GET /healthz`**: Liveness probe – always returns `200 ok`.
 -   **`GET /readyz`**: Readiness probe – returns `200 ready` when the signing key is loaded, `503` otherwise.
 
@@ -348,4 +425,8 @@ attestation:
 - **Apple**: [App Attest](https://developer.apple.com/documentation/devicecheck/validating-apps-that-connect-to-your-server)
 
 ## Outlook
+
+
+
+
 

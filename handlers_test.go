@@ -792,3 +792,343 @@ func TestTokenClaimsRFC7519Compliance(t *testing.T) {
 		t.Error("'jti' claim should be a string")
 	}
 }
+
+// TestRFC7519RFC6749Compliance validates comprehensive RFC compliance:
+// - RFC 7519: JWT standard claims and structure
+// - RFC 6749: OAuth2 token response and error response format
+// - HTTP headers: Cache-Control, Pragma, WWW-Authenticate
+func TestRFC7519RFC6749Compliance(t *testing.T) {
+	if err := loadTestKey(); err != nil {
+		t.Skipf("Could not load test key: %v", err)
+	}
+
+	appConfig.PublicHost = "https://idp.example.com"
+	appConfig.HideErrorDescription = false
+	audienceLookupMap = make(map[string][]string)
+	ttlLookupMap = make(map[string]time.Duration)
+	clientLookupMap = make(map[string]string)
+	originLookupMap = make(map[string][]string)
+
+	audienceLookupMap["rfc-test"] = []string{"test-audience"}
+	ttlLookupMap["rfc-test"] = 1 * time.Hour
+	clientLookupMap["rfc-test"] = clientTypeWeb
+	originLookupMap["rfc-test"] = []string{"https://example.com"}
+
+	form := url.Values{
+		"client_id":  {"rfc-test"},
+		"grant_type": {"client_credentials"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/sso/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "https://example.com")
+	req.RemoteAddr = "192.168.1.100:12345"
+
+	w := httptest.NewRecorder()
+	tokenHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got: %d, body: %s", w.Code, w.Body.String())
+	}
+
+	// RFC 6749: Check response headers
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Errorf("RFC 6749: Missing 'application/json' Content-Type, got: %s", ct)
+	}
+	if cc := w.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("RFC 6749: Cache-Control should be 'no-store', got: %s", cc)
+	}
+	if pragma := w.Header().Get("Pragma"); pragma != "no-cache" {
+		t.Errorf("RFC 6749: Pragma should be 'no-cache', got: %s", pragma)
+	}
+
+	var response map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	// RFC 6749: Check response fields
+	if _, exists := response["access_token"]; !exists {
+		t.Error("RFC 6749: Missing 'access_token' in response")
+	}
+	if _, exists := response["token_type"]; !exists {
+		t.Error("RFC 6749: Missing 'token_type' in response")
+	}
+	if tokenType, ok := response["token_type"].(string); ok && tokenType != "Bearer" {
+		t.Errorf("RFC 6749: token_type should be 'Bearer', got: %s", tokenType)
+	}
+	if expiresIn, ok := response["expires_in"].(float64); !ok || expiresIn != 3600 {
+		t.Errorf("RFC 6749: expires_in should be 3600 seconds, got: %v", expiresIn)
+	}
+
+	tokenStr, ok := response["access_token"].(string)
+	if !ok {
+		t.Fatal("RFC 6749: access_token not a string")
+	}
+
+	// Parse and validate JWT
+	token, err := jwt.ParseWithClaims(tokenStr, jwt.MapClaims{}, func(token *jwt.Token) (interface{}, error) {
+		keyMu.RLock()
+		defer keyMu.RUnlock()
+		if currentKey == nil {
+			return nil, errors.New("key not loaded")
+		}
+		return currentKey.key.Public(), nil
+	})
+	if err != nil {
+		t.Fatalf("Failed to parse token: %v", err)
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		t.Fatal("RFC 7519: Failed to read claims")
+	}
+
+	// RFC 7519: Validate required claims
+	requiredClaims := []string{"iss", "exp", "iat", "sub", "aud"}
+	for _, claim := range requiredClaims {
+		if _, exists := claims[claim]; !exists {
+			t.Errorf("RFC 7519: Missing required claim '%s'", claim)
+		}
+	}
+
+	// RFC 7519: Validate iat (Issued At)
+	iat, ok := claims["iat"].(float64)
+	if !ok {
+		t.Error("RFC 7519: 'iat' must be a number (Unix timestamp)")
+	}
+	if iat <= 0 {
+		t.Error("RFC 7519: 'iat' must be a positive Unix timestamp")
+	}
+
+	// RFC 7519: Validate exp (Expiration)
+	exp, ok := claims["exp"].(float64)
+	if !ok {
+		t.Error("RFC 7519: 'exp' must be a number")
+	}
+	if exp <= iat {
+		t.Error("RFC 7519: 'exp' must be greater than 'iat'")
+	}
+
+	// RFC 7519: Validate jti (JWT ID)
+	jti, ok := claims["jti"].(string)
+	if !ok {
+		t.Error("RFC 7519: 'jti' must be a string")
+	}
+	if !strings.HasPrefix(jti, "jti_") {
+		t.Errorf("RFC 7519: 'jti' should have 'jti_' prefix for uniqueness, got: %s", jti)
+	}
+	if len(jti) < 10 {
+		t.Errorf("RFC 7519: 'jti' too short, got: %s", jti)
+	}
+
+	// RFC 7519: Validate iss (Issuer)
+	iss, ok := claims["iss"].(string)
+	if !ok {
+		t.Error("RFC 7519: 'iss' must be a string")
+	}
+	if !strings.Contains(iss, "idp.example.com") {
+		t.Errorf("RFC 7519: 'iss' should match public host, got: %s", iss)
+	}
+
+	// RFC 7519: Validate aud (Audience)
+	aud := claims["aud"]
+	if aud == nil {
+		t.Error("RFC 7519: 'aud' claim missing")
+	}
+
+	// RFC 7519: Validate sub (Subject)
+	sub, ok := claims["sub"].(string)
+	if !ok {
+		t.Error("RFC 7519: 'sub' must be a string")
+	}
+	if !strings.HasPrefix(sub, "anon-") {
+		t.Errorf("RFC 7519: 'sub' should start with 'anon-', got: %s", sub)
+	}
+
+	// RFC 7519: Header validation
+	if token.Header["alg"] != "ES256" {
+		t.Errorf("RFC 7519: Algorithm should be ES256, got: %v", token.Header["alg"])
+	}
+	if token.Header["kid"] == nil {
+		t.Error("RFC 7519: Missing 'kid' header (Key ID)")
+	}
+	if token.Header["jku"] == nil {
+		t.Error("RFC 7519: Missing 'jku' header (JWKS URL)")
+	}
+}
+
+// TestOAuth2ErrorResponseFormat validates RFC 6749 error response format
+func TestOAuth2ErrorResponseFormat(t *testing.T) {
+	appConfig.HideErrorDescription = false
+	appConfig.PublicHost = "https://idp.example.com"
+	clientLookupMap = make(map[string]string)
+
+	// Test invalid_request error
+	form := url.Values{
+		"grant_type": {"client_credentials"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/sso/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	w := httptest.NewRecorder()
+	tokenHandler(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400, got: %d", w.Code)
+	}
+
+	// Check RFC 6749 error response headers
+	if cc := w.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("RFC 6749: Error response missing Cache-Control: no-store, got: %s", cc)
+	}
+	if pragma := w.Header().Get("Pragma"); pragma != "no-cache" {
+		t.Errorf("RFC 6749: Error response missing Pragma: no-cache, got: %s", pragma)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Errorf("RFC 6749: Error response missing application/json, got: %s", ct)
+	}
+
+	var errResp map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
+		t.Fatalf("Failed to parse error response: %v", err)
+	}
+
+	if errResp["error"] == "" {
+		t.Error("RFC 6749: Error response missing 'error' field")
+	}
+	if errResp["error_description"] == "" {
+		t.Error("RFC 6749: Error response missing 'error_description' (hideErrorDescription=false)")
+	}
+}
+
+// TestOAuth2InvalidClientAuthentication validates RFC 6749 invalid_client error
+func TestOAuth2InvalidClientAuthentication(t *testing.T) {
+	appConfig.HideErrorDescription = false
+	appConfig.PublicHost = "https://idp.example.com"
+	clientLookupMap = make(map[string]string)
+
+	form := url.Values{
+		"client_id":  {"unknown-client"},
+		"grant_type": {"client_credentials"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/sso/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	w := httptest.NewRecorder()
+	tokenHandler(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("RFC 6749: Expected 401 for invalid_client, got: %d", w.Code)
+	}
+
+	// Check WWW-Authenticate header for invalid_client (RFC 2617)
+	if auth := w.Header().Get("WWW-Authenticate"); !strings.Contains(auth, "invalid_client") {
+		t.Errorf("RFC 2617: Missing WWW-Authenticate header for invalid_client, got: %s", auth)
+	}
+
+	var errResp map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
+		t.Fatalf("Failed to parse error response: %v", err)
+	}
+
+	if errResp["error"] != "invalid_client" {
+		t.Errorf("RFC 6749: Expected error='invalid_client', got: %s", errResp["error"])
+	}
+}
+
+// TestOAuthMetadataHandler tests RFC 8414 OAuth 2.0 Authorization Server Metadata
+func TestOAuthMetadataHandler(t *testing.T) {
+	appConfig.PublicHost = "https://idp.example.com"
+
+	req := httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server", nil)
+	w := httptest.NewRecorder()
+
+	oauthMetadataHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got: %d", w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if !strings.Contains(contentType, "application/json") {
+		t.Errorf("Expected Content-Type application/json, got: %s", contentType)
+	}
+
+	// RFC 8414: Check Cache-Control header
+	cacheControl := w.Header().Get("Cache-Control")
+	if cacheControl == "" {
+		t.Errorf("Expected Cache-Control header for metadata caching")
+	}
+
+	var metadata map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &metadata); err != nil {
+		t.Fatalf("Failed to parse metadata response: %v", err)
+	}
+
+	// RFC 8414: Required metadata fields
+	requiredFields := []string{
+		"issuer",
+		"token_endpoint",
+		"jwks_uri",
+		"grant_types_supported",
+		"token_endpoint_auth_methods_supported",
+	}
+
+	for _, field := range requiredFields {
+		if _, exists := metadata[field]; !exists {
+			t.Errorf("RFC 8414: Missing required field '%s'", field)
+		}
+	}
+
+	// Verify issuer format
+	if issuer, ok := metadata["issuer"].(string); ok {
+		if !strings.Contains(issuer, "idp.example.com") {
+			t.Errorf("issuer should match public host, got: %s", issuer)
+		}
+	} else {
+		t.Error("issuer should be a string")
+	}
+
+	// Verify token_endpoint
+	if tokenEndpoint, ok := metadata["token_endpoint"].(string); ok {
+		if !strings.Contains(tokenEndpoint, "/sso/token") {
+			t.Errorf("token_endpoint should contain /sso/token, got: %s", tokenEndpoint)
+		}
+	} else {
+		t.Error("token_endpoint should be a string")
+	}
+
+	// Verify jwks_uri
+	if jwksUri, ok := metadata["jwks_uri"].(string); ok {
+		if !strings.Contains(jwksUri, "/.well-known/jwks.json") {
+			t.Errorf("jwks_uri should contain /.well-known/jwks.json, got: %s", jwksUri)
+		}
+	} else {
+		t.Error("jwks_uri should be a string")
+	}
+
+	// Verify grant_types_supported
+	if grantTypes, ok := metadata["grant_types_supported"].([]interface{}); ok {
+		found := false
+		for _, gt := range grantTypes {
+			if gt == "client_credentials" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("grant_types_supported should contain 'client_credentials'")
+		}
+	} else {
+		t.Error("grant_types_supported should be an array")
+	}
+
+	// Verify token_endpoint_auth_methods_supported
+	if authMethods, ok := metadata["token_endpoint_auth_methods_supported"].([]interface{}); ok {
+		if len(authMethods) == 0 {
+			t.Error("token_endpoint_auth_methods_supported should not be empty")
+		}
+	} else {
+		t.Error("token_endpoint_auth_methods_supported should be an array")
+	}
+}

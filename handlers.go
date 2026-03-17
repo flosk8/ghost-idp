@@ -341,3 +341,35 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 		appLogger.Error("Failed to encode token response for client '%s': %v", clientID, err)
 	}
 }
+
+// oauthMetadataHandler returns OAuth 2.0 Authorization Server Metadata (RFC 8414)
+// Endpoint: GET /.well-known/oauth-authorization-server
+func oauthMetadataHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+
+	publicHost := formatHost(appConfig.PublicHost)
+	metadata := map[string]interface{}{
+		// RFC 8414 Required Claims
+		"issuer":                                publicHost,
+		"token_endpoint":                        publicHost + "/sso/token",
+		"jwks_uri":                              publicHost + "/.well-known/jwks.json",
+		"token_endpoint_auth_methods_supported": []string{"client_id_only"},
+
+		// RFC 8414 Recommended Claims
+		"grant_types_supported": []string{
+			"client_credentials",
+		},
+
+		// Additional metadata for transparency
+		"response_types_supported": []string{
+			"token",
+		},
+		"token_type_supported":  "Bearer",
+		"service_documentation": "https://github.com/ndrde/ghost-idp",
+	}
+
+	if err := json.NewEncoder(w).Encode(metadata); err != nil {
+		appLogger.Error("Failed to encode OAuth metadata response: %v", err)
+	}
+}
